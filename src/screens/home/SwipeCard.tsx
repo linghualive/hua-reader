@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Dimensions } from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/theme/ThemeContext';
 import { relativeTime } from '@/utils/time';
 import type { ArticleWithFeed } from '@/db/articles';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, Alert, SectionList, StyleSheet } from 'react-native';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@/theme/ThemeContext';
 import { getAllFeeds, deleteFeed, type FeedWithMeta } from '@/db/feeds';
 
