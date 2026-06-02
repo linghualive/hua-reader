@@ -1,142 +1,290 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Pressable, StatusBar, ActivityIndicator, Text, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, Pressable, StatusBar, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useTheme } from '@/theme/ThemeContext';
+import { READING_BG_OPTIONS } from '@/theme/reading';
 import { getDatabase } from '@/db/database';
-import { toggleBookmark, markAsRead, type ArticleWithFeed } from '@/db/articles';
+import { cacheArticleContent, toggleBookmark, markAsRead, type ArticleWithFeed } from '@/db/articles';
+import { generateArticleHtml } from '@/services/article-html';
+import { relativeTime } from '@/utils/time';
+import { estimateReadingTime } from '@/utils/reading-time';
 import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
 
+const EXTRACT_JS = `
+(function() {
+  function extract() {
+    var article = document.querySelector('article')
+      || document.querySelector('[class*="article-content"], [class*="post-content"], [class*="entry-content"]')
+      || document.querySelector('[role="main"]')
+      || document.querySelector('main');
+    if (article) return article.innerHTML;
+
+    var ps = document.querySelectorAll('p');
+    if (ps.length > 3) {
+      var div = document.createElement('div');
+      ps.forEach(function(p) { if (p.textContent.length > 15) div.appendChild(p.cloneNode(true)); });
+      if (div.textContent.length > 100) return div.innerHTML;
+    }
+    return null;
+  }
+  try {
+    var c = extract();
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extracted', content: c }));
+  } catch(e) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extracted', content: null }));
+  }
+})(); true;
+`;
+
 const CLEAN_PAGE_JS = `
 (function() {
-  var selectors = [
-    '[class*="ad-"]', '[class*="ads-"]', '[class*="advert"]', '[id*="ad-"]', '[id*="ads-"]',
-    '[class*="banner"]', '[class*="popup"]', '[class*="modal"]', '[class*="overlay"]',
-    '[class*="sidebar"]', '[class*="recommend"]', '[class*="related"]',
-    '[class*="share"]', '[class*="social"]', '[class*="comment"]',
-    'nav', 'footer', 'header', '[role="banner"]', '[role="navigation"]',
-    '[class*="toolbar"]', '[class*="sticky"]', '[class*="fixed"]',
-    '[class*="download"]', '[class*="app-download"]', '[class*="open-app"]',
-    '[class*="guide"]', '[class*="toast"]', '[class*="mask"]',
-    'iframe[src*="ad"]', 'iframe[src*="google"]',
-  ];
-  selectors.forEach(function(sel) {
-    document.querySelectorAll(sel).forEach(function(el) {
-      el.style.display = 'none';
+  function clean() {
+    var hide = [
+      '[class*="ad"]', '[id*="ad"]',
+      '[class*="banner"]', '[class*="popup"]', '[class*="modal"]', '[class*="overlay"]',
+      '[class*="sidebar"]', '[class*="recommend"]', '[class*="related"]',
+      '[class*="share"]', '[class*="social"]', '[class*="comment"]',
+      '[class*="toolbar"]', '[class*="sticky"]', '[class*="fixed"]',
+      '[class*="download"]', '[class*="open-app"]', '[class*="openapp"]',
+      '[class*="guide"]', '[class*="toast"]', '[class*="mask"]',
+      '[class*="float"]', '[class*="qrcode"]', '[class*="wechat"]',
+      '[class*="follow"]', '[class*="subscribe"]', '[class*="login"]',
+      '[class*="promotion"]', '[class*="bottom-bar"]', '[class*="bottombar"]',
+      '[class*="top-bar"]', '[class*="topbar"]', '[class*="dialog"]',
+      'nav', 'footer', 'header:not(.article-header)',
+      '[role="banner"]', '[role="navigation"]',
+      'iframe',
+    ];
+    hide.forEach(function(s) {
+      try {
+        document.querySelectorAll(s).forEach(function(el) {
+          if (!el.closest('article, main, [class*="content"]') ||
+              (el.className||'').toLowerCase().match(/ad|banner|share|download|recommend|comment|open.?app|qrcode|login|promo/)) {
+            el.style.setProperty('display','none','important');
+          }
+        });
+      } catch(e){}
     });
-  });
-  document.body.style.overflow = 'auto';
-  document.documentElement.style.overflow = 'auto';
-})();
-true;
+    var css = document.createElement('style');
+    css.textContent = 'body,html{overflow:auto!important}[style*="position: fixed"],[style*="position:fixed"]{display:none!important}';
+    document.head.appendChild(css);
+  }
+  clean(); setTimeout(clean,1500); setTimeout(clean,3500);
+})(); true;
 `;
 
 const DARK_MODE_JS = `
 (function() {
-  var style = document.createElement('style');
-  style.textContent = \`
-    html, body {
-      background-color: #121212 !important;
-      color: #e0e0e0 !important;
-    }
-    * {
-      border-color: #333 !important;
-    }
-    img { opacity: 0.9; }
-    a { color: #82b1ff !important; }
-  \`;
-  document.head.appendChild(style);
-  document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
-})();
-true;
+  var s = document.createElement('style');
+  s.textContent = 'html,body{background-color:#121212!important;color:#e0e0e0!important}*{border-color:#333!important}img{opacity:0.9}a{color:#82b1ff!important}';
+  document.head.appendChild(s);
+})(); true;
 `;
 
 export default function ReaderScreen() {
-  const { colors, colorMode } = useTheme();
+  const { colors, readingPrefs, colorMode } = useTheme();
   const navigation = useNavigation();
   const route = useRoute<ReaderRoute>();
   const { articleId } = route.params;
 
   const [article, setArticle] = useState<ArticleWithFeed | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'loading' | 'reader' | 'web'>('loading');
+  const [readerHtml, setReaderHtml] = useState('');
   const [barsVisible, setBarsVisible] = useState(true);
+  const [webLoading, setWebLoading] = useState(false);
+  const extractRef = useRef<WebView>(null);
 
+  const isDark = colorMode !== 'light';
+  const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44;
+
+  const buildReaderHtml = useCallback((art: ArticleWithFeed, content: string) => {
+    const bgOpt = READING_BG_OPTIONS.find(o => o.backgroundColor === readingPrefs.backgroundColor) || READING_BG_OPTIONS[0];
+    return generateArticleHtml({
+      title: art.title,
+      feedName: art.feed_title,
+      date: relativeTime(new Date(art.published_at)),
+      readingTime: estimateReadingTime(content),
+      content,
+      fontSize: readingPrefs.fontSize,
+      lineHeight: readingPrefs.lineHeight,
+      backgroundColor: isDark ? '#121212' : bgOpt.backgroundColor,
+      textColor: isDark ? '#e0e0e0' : bgOpt.textColor,
+      secondaryColor: colors.onSurfaceVariant,
+      accentColor: colors.primary,
+    });
+  }, [readingPrefs, colors, isDark]);
+
+  // Load article
   useEffect(() => {
     (async () => {
       const db = getDatabase();
       const row = await db.getFirstAsync<ArticleWithFeed>(
         `SELECT a.*, f.title AS feed_title, f.icon_url AS feed_icon_url
-         FROM articles a JOIN feeds f ON a.feed_id = f.id
-         WHERE a.id = ?`,
+         FROM articles a JOIN feeds f ON a.feed_id = f.id WHERE a.id = ?`,
         [articleId],
       );
-      if (row) {
-        setArticle(row);
-        await markAsRead(row.id);
+      if (!row) return;
+      setArticle(row);
+      await markAsRead(row.id);
+
+      const content = row.content || '';
+      const plain = content.replace(/<[^>]*>/g, '').trim();
+      if (plain.length > 200) {
+        setReaderHtml(buildReaderHtml(row, content));
+        setMode('reader');
+      } else if (row.url) {
+        setMode('loading');
+        setTimeout(() => {
+          setMode((m) => m === 'loading' ? 'web' : m);
+        }, 12000);
+      } else {
+        setReaderHtml(buildReaderHtml(row, content || row.summary || ''));
+        setMode('reader');
       }
     })();
   }, [articleId]);
 
+  // Re-render reader on theme change
+  useEffect(() => {
+    if (mode === 'reader' && article) {
+      const content = article.content || article.summary || '';
+      setReaderHtml(buildReaderHtml(article, content));
+    }
+  }, [readingPrefs, colors, isDark]);
+
+  const handleExtractMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'extracted' && article) {
+        if (data.content && data.content.replace(/<[^>]*>/g, '').trim().length > 100) {
+          cacheArticleContent(article.id, data.content);
+          setArticle(prev => prev ? { ...prev, content: data.content } : prev);
+          setReaderHtml(buildReaderHtml(article, data.content));
+          setMode('reader');
+        } else {
+          setMode('web');
+        }
+      }
+    } catch {}
+  }, [article, buildReaderHtml]);
+
+  const handleReaderMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'toggle_bars') setBarsVisible(v => !v);
+    } catch {}
+  }, []);
+
   const handleBookmark = useCallback(async () => {
     if (!article) return;
     await toggleBookmark(article.id);
-    setArticle((prev) =>
-      prev ? { ...prev, is_bookmarked: prev.is_bookmarked === 1 ? 0 : 1 } : prev,
-    );
+    setArticle(prev => prev ? { ...prev, is_bookmarked: prev.is_bookmarked === 1 ? 0 : 1 } : prev);
   }, [article]);
 
+  const toggleMode = useCallback(() => {
+    if (mode === 'reader' && article?.url) {
+      setMode('web');
+    } else if (mode === 'web' && readerHtml) {
+      setMode('reader');
+    }
+  }, [mode, article, readerHtml]);
+
   const isBookmarked = article?.is_bookmarked === 1;
-  const isDark = colorMode !== 'light';
-  const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44;
+  const canToggle = (mode === 'reader' && article?.url) || (mode === 'web' && readerHtml);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* Top bar */}
-      <View style={[styles.topBar, { backgroundColor: colors.surface, borderBottomColor: colors.outline + '20' }]}>
-        <View style={{ height: statusBarHeight }} />
-        <View style={styles.topBarRow}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
-          </Pressable>
-          <Text style={[styles.titleText, { color: colors.onSurface }]} numberOfLines={1}>
-            {article?.feed_title || ''}
-          </Text>
-          <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
-            <MaterialCommunityIcons
-              name={isBookmarked ? 'star' : 'star-outline'}
-              size={24}
-              color={isBookmarked ? colors.primary : colors.onSurface}
-            />
-          </Pressable>
-        </View>
-      </View>
+      {/* Hidden extract WebView */}
+      {mode === 'loading' && article?.url && (
+        <WebView
+          ref={extractRef}
+          source={{ uri: article.url }}
+          style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
+          onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
+          onMessage={handleExtractMessage}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          onError={() => setMode('web')}
+          onHttpError={() => setMode('web')}
+        />
+      )}
 
-      {/* WebView with original article */}
-      {article?.url ? (
+      {/* Loading */}
+      {mode === 'loading' && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>正在提取文章...</Text>
+        </View>
+      )}
+
+      {/* Reader mode */}
+      {mode === 'reader' && readerHtml ? (
+        <WebView
+          source={{ html: readerHtml }}
+          style={styles.webView}
+          onMessage={handleReaderMessage}
+          showsVerticalScrollIndicator={false}
+          javaScriptEnabled
+          originWhitelist={['*']}
+        />
+      ) : null}
+
+      {/* Web mode */}
+      {mode === 'web' && article?.url ? (
         <WebView
           source={{ uri: article.url }}
-          style={[styles.webView, { backgroundColor: colors.background }]}
+          style={[styles.webView, { marginTop: statusBarHeight + 44 }]}
           showsVerticalScrollIndicator={false}
           javaScriptEnabled
           domStorageEnabled
           originWhitelist={['*']}
           mixedContentMode="compatibility"
-          onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
-          startInLoadingState={false}
           forceDarkOn={isDark}
           injectedJavaScript={CLEAN_PAGE_JS + (isDark ? DARK_MODE_JS : '')}
+          onLoadStart={() => setWebLoading(true)}
+          onLoadEnd={() => setWebLoading(false)}
         />
       ) : null}
 
-      {/* Loading indicator */}
-      {loading && (
-        <View style={styles.loadingBar}>
+      {/* Top bar */}
+      {barsVisible && (
+        <View style={[styles.topBar, { backgroundColor: (isDark ? '#121212' : colors.surface) + 'F0' }]}>
+          <View style={{ height: statusBarHeight }} />
+          <View style={styles.topBarRow}>
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={isDark ? '#e0e0e0' : colors.onSurface} />
+            </Pressable>
+            <Text style={[styles.titleText, { color: isDark ? '#e0e0e0' : colors.onSurface }]} numberOfLines={1}>
+              {article?.feed_title || ''}
+            </Text>
+            {canToggle && (
+              <Pressable onPress={toggleMode} hitSlop={12} style={styles.barBtn}>
+                <MaterialCommunityIcons
+                  name={mode === 'reader' ? 'web' : 'text-box-outline'}
+                  size={22}
+                  color={isDark ? '#aaa' : colors.onSurfaceVariant}
+                />
+              </Pressable>
+            )}
+            <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
+              <MaterialCommunityIcons
+                name={isBookmarked ? 'star' : 'star-outline'}
+                size={24}
+                color={isBookmarked ? colors.primary : (isDark ? '#e0e0e0' : colors.onSurface)}
+              />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {webLoading && mode === 'web' && (
+        <View style={[styles.webLoadingBar, { top: statusBarHeight + 44 }]}>
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
       )}
@@ -146,10 +294,12 @@ export default function ReaderScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  topBar: { borderBottomWidth: StyleSheet.hairlineWidth },
-  topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 10 },
+  webView: { flex: 1, backgroundColor: 'transparent' },
+  loadingOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 14 },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
   barBtn: { padding: 8 },
-  titleText: { flex: 1, fontSize: 15, fontWeight: '500', marginHorizontal: 8 },
-  webView: { flex: 1 },
-  loadingBar: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
+  titleText: { flex: 1, fontSize: 15, fontWeight: '500', marginHorizontal: 4 },
+  webLoadingBar: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 15, paddingVertical: 4 },
 });
