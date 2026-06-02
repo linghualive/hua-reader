@@ -1,18 +1,11 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, Text, StyleSheet, Platform, Animated } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  interpolate,
-} from 'react-native-reanimated';
 import { useTheme } from '@/theme/ThemeContext';
 
 import HomeScreen from '@/screens/home/HomeScreen';
@@ -42,117 +35,54 @@ const TAB_CONFIG: Record<string, { label: string; icon: string; iconFocused: str
   ProfileTab: { label: '我的', icon: 'account-outline', iconFocused: 'account' },
 };
 
-function TabItem({
-  focused,
-  routeName,
-  onPress,
-  primaryColor,
-  activeBgColor,
-  mutedColor,
-}: {
-  focused: boolean;
-  routeName: string;
-  onPress: () => void;
-  primaryColor: string;
-  activeBgColor: string;
-  mutedColor: string;
-}) {
-  const config = TAB_CONFIG[routeName] ?? { label: routeName, icon: 'circle', iconFocused: 'circle' };
-  const progress = useSharedValue(focused ? 1 : 0);
-  const scale = useSharedValue(1);
-
-  React.useEffect(() => {
-    progress.value = withSpring(focused ? 1 : 0, { damping: 15, stiffness: 200, mass: 0.8 });
-  }, [focused]);
-
-  const containerStyle = useAnimatedStyle(() => {
-    'worklet';
-    return {
-      paddingHorizontal: interpolate(progress.value, [0, 1], [14, 20]),
-      opacity: interpolate(progress.value, [0, 0.5, 1], [1, 1, 1]),
-      transform: [{ scale: scale.value }],
-    };
-  });
-
-  const labelStyle = useAnimatedStyle(() => {
-    'worklet';
-    return {
-      width: interpolate(progress.value, [0, 1], [0, 36]),
-      opacity: progress.value,
-      marginLeft: interpolate(progress.value, [0, 1], [0, 6]),
-    };
-  });
-
-  const handlePress = () => {
-    scale.value = withSpring(0.9, { damping: 15, stiffness: 400 }, () => {
-      'worklet';
-      scale.value = withSpring(1, { damping: 12, stiffness: 300 });
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
-
-  return (
-    <Pressable onPress={handlePress}>
-      <Animated.View
-        style={[
-          styles.tabItem,
-          containerStyle,
-          focused && { backgroundColor: activeBgColor },
-        ]}
-      >
-        <MaterialCommunityIcons
-          name={(focused ? config.iconFocused : config.icon) as any}
-          size={21}
-          color={focused ? primaryColor : mutedColor}
-        />
-        <Animated.View style={[styles.labelWrap, labelStyle]}>
-          <Text style={[styles.tabLabel, { color: primaryColor }]} numberOfLines={1}>
-            {config.label}
-          </Text>
-        </Animated.View>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
 function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const { colors, colorMode } = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = colorMode !== 'light';
-  const activeBg = colors.primary + '18';
 
   return (
     <View style={[styles.tabBarOuter, { bottom: Math.max(insets.bottom, 16) }]}>
-      <View style={styles.tabBarShadow}>
-        <BlurView
-          intensity={isDark ? 40 : 60}
-          tint={isDark ? 'dark' : 'light'}
-          style={[
-            styles.tabBarBlur,
-            {
-              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-              backgroundColor: isDark ? 'rgba(28, 28, 30, 0.75)' : 'rgba(255, 255, 255, 0.72)',
-            },
-          ]}
-        >
-          {state.routes.map((route, index) => (
-            <TabItem
+      <View
+        style={[
+          styles.tabBarContainer,
+          {
+            backgroundColor: isDark ? 'rgba(28, 28, 30, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          },
+        ]}
+      >
+        {state.routes.map((route, index) => {
+          const focused = state.index === index;
+          const config = TAB_CONFIG[route.name] ?? { label: route.name, icon: 'circle', iconFocused: 'circle' };
+
+          return (
+            <Pressable
               key={route.key}
-              focused={state.index === index}
-              routeName={route.name}
-              primaryColor={colors.primary}
-              activeBgColor={activeBg}
-              mutedColor={colors.onSurfaceVariant}
               onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
                 if (state.index !== index && !event.defaultPrevented) {
                   navigation.navigate(route.name);
                 }
               }}
-            />
-          ))}
-        </BlurView>
+              style={[
+                styles.tabItem,
+                focused && { backgroundColor: colors.primary + '15' },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={(focused ? config.iconFocused : config.icon) as any}
+                size={21}
+                color={focused ? colors.primary : colors.onSurfaceVariant}
+              />
+              {focused && (
+                <Text style={[styles.tabLabel, { color: colors.primary }]}>
+                  {config.label}
+                </Text>
+              )}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -212,32 +142,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     pointerEvents: 'box-none',
   },
-  tabBarShadow: {
-    ...Platform.select({
-      android: { elevation: 16 },
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 16 },
-    }),
-    borderRadius: 26,
-  },
-  tabBarBlur: {
+  tabBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: 26,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: 2,
-    overflow: 'hidden',
+    gap: 4,
+    ...Platform.select({
+      android: { elevation: 12 },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 },
+    }),
   },
   tabItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 20,
-  },
-  labelWrap: {
-    overflow: 'hidden',
+    gap: 6,
   },
   tabLabel: {
     fontSize: 13,
