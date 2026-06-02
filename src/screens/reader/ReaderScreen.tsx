@@ -273,7 +273,7 @@ export default function ReaderScreen() {
       )}
 
       {/* Loading skeleton */}
-      {mode === 'loading' && <ReaderSkeleton />}
+      {mode === 'loading' && <View style={{ marginTop: statusBarHeight + 44 }}><ReaderSkeleton /></View>}
 
       {/* Reader mode: clean themed content */}
       {mode === 'reader' && readerHtml ? (
