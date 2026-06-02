@@ -76,11 +76,32 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
 }
 
 export async function downloadAndInstallApk(url: string): Promise<void> {
-  // Directly open the download URL in browser - browser handles download + install
-  const supported = await Linking.canOpenURL(url);
-  if (supported) {
-    await Linking.openURL(url);
-  } else {
-    Alert.alert('无法打开下载链接', '请手动在浏览器中访问 GitHub Release 页面下载');
+  // Try multiple download mirrors
+  const mirrors = [
+    url,
+    url.replace('github.com', 'ghproxy.net/https://github.com'),
+    `https://gh-proxy.com/${url}`,
+  ];
+
+  for (const mirror of mirrors) {
+    try {
+      console.log('[Updater] Opening download:', mirror);
+      const supported = await Linking.canOpenURL(mirror);
+      if (supported) {
+        await Linking.openURL(mirror);
+        return;
+      }
+    } catch {}
   }
+
+  // Last resort: open release page
+  const releasePage = `https://github.com/${GITHUB_REPO}/releases/latest`;
+  Alert.alert(
+    '下载链接无法打开',
+    '是否打开 Release 页面手动下载？',
+    [
+      { text: '取消' },
+      { text: '打开', onPress: () => Linking.openURL(releasePage) },
+    ]
+  );
 }
