@@ -10,8 +10,6 @@ import { cacheArticleContent, toggleBookmark, type ArticleWithFeed } from '@/db/
 import { generateArticleHtml } from '@/services/article-html';
 import { relativeTime } from '@/utils/time';
 import { estimateReadingTime } from '@/utils/reading-time';
-import { ReaderToolbar } from './ReaderToolbar';
-import { TypographyPanel } from './TypographyPanel';
 import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
@@ -64,9 +62,7 @@ export default function ReaderScreen() {
 
   const [article, setArticle] = useState<ArticleWithFeed | null>(null);
   const [htmlContent, setHtmlContent] = useState<string>('');
-  const [progress, setProgress] = useState(0);
   const [barsVisible, setBarsVisible] = useState(true);
-  const [typographyVisible, setTypographyVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<'reader' | 'extracting' | 'webview'>('reader');
   const extractWebViewRef = useRef<WebView>(null);
@@ -172,9 +168,7 @@ export default function ReaderScreen() {
   const handleReaderMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'scroll_progress') {
-        setProgress(data.progress);
-      } else if (data.type === 'toggle_bars') {
+      if (data.type === 'toggle_bars') {
         setBarsVisible((v) => !v);
       }
     } catch {}
@@ -272,26 +266,7 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* Bottom toolbar */}
-      {barsVisible && mode === 'reader' && (
-        <View style={[styles.bottomBar, { backgroundColor: colors.surface + 'F0' }]}>
-          <ReaderToolbar
-            progress={progress}
-            onToggleTypography={() => setTypographyVisible(true)}
-            onToggleNightMode={() => setColorMode(isDark ? 'light' : 'dark')}
-            isNightMode={isDark}
-          />
-        </View>
-      )}
-
 {/* Removed tap zone overlay - toggle bars via WebView JS tap detection */}
-
-      <TypographyPanel
-        visible={typographyVisible}
-        onClose={() => setTypographyVisible(false)}
-        prefs={readingPrefs}
-        onChangePrefs={setReadingPrefs}
-      />
     </View>
   );
 }
@@ -305,5 +280,4 @@ const styles = StyleSheet.create({
   topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
   topBarSpacer: { flex: 1 },
   barBtn: { padding: 8 },
-  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingBottom: 20 },
 });
