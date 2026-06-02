@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -6,96 +6,102 @@ import { createDrawerNavigator, type DrawerContentComponentProps } from '@react-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme/ThemeContext';
+import { getAllTopics, type Topic } from '@/db/topics';
 
 import HomeScreen from '@/screens/home/HomeScreen';
-import DiscoverScreen from '@/screens/discover/DiscoverScreen';
-import ProfileScreen from '@/screens/profile/ProfileScreen';
 
 export type RootStackParamList = {
-  Main: undefined;
+  Home: undefined;
   Reader: { articleId: number };
+  Discover: undefined;
+  Profile: undefined;
   Bookmarks: undefined;
   RecentlyRead: undefined;
   FeedManager: undefined;
   Settings: undefined;
 };
 
-export type DrawerParamList = {
-  HomeDrawer: undefined;
-  DiscoverDrawer: undefined;
-  ProfileDrawer: undefined;
-};
+type TopicFilter = { id: number | null; name: string };
+const TopicFilterContext = createContext<{
+  current: TopicFilter;
+  setCurrent: (t: TopicFilter) => void;
+}>({ current: { id: null, name: '全部' }, setCurrent: () => {} });
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+export function useTopicFilter() {
+  return useContext(TopicFilterContext);
+}
+
+export type DrawerParamList = { MainStack: undefined };
 const Drawer = createDrawerNavigator<DrawerParamList>();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const DRAWER_ITEMS: { name: keyof DrawerParamList; label: string; icon: string; iconFocused: string }[] = [
-  { name: 'HomeDrawer', label: '首页', icon: 'home-outline', iconFocused: 'home' },
-  { name: 'DiscoverDrawer', label: '发现', icon: 'compass-outline', iconFocused: 'compass' },
-  { name: 'ProfileDrawer', label: '我的', icon: 'account-outline', iconFocused: 'account' },
-];
-
-function CustomDrawerContent({ state, navigation }: DrawerContentComponentProps) {
-  const { colors, colorMode } = useTheme();
+function CustomDrawerContent({ navigation }: DrawerContentComponentProps) {
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const isDark = colorMode !== 'light';
+  const { current, setCurrent } = useTopicFilter();
+  const [topics, setTopics] = useState<Topic[]>([]);
+
+  useEffect(() => { getAllTopics().then(setTopics); }, []);
+
+  const goHome = useCallback((filter: TopicFilter) => {
+    setCurrent(filter);
+    navigation.navigate('MainStack', { screen: 'Home' });
+    navigation.closeDrawer();
+  }, [navigation, setCurrent]);
+
+  const goTo = useCallback((screen: string) => {
+    navigation.navigate('MainStack', { screen });
+    navigation.closeDrawer();
+  }, [navigation]);
 
   return (
-    <View style={[styles.drawer, { backgroundColor: colors.surface, paddingTop: insets.top + 16 }]}>
-      <View style={styles.drawerHeader}>
-        <Text style={[styles.drawerTitle, { color: colors.onSurface }]}>华读</Text>
-        <Text style={[styles.drawerSubtitle, { color: colors.onSurfaceVariant }]}>打破认知边界</Text>
-      </View>
+    <View style={[styles.drawer, { backgroundColor: colors.surface, paddingTop: insets.top + 12 }]}>
+      <Text style={[styles.drawerTitle, { color: colors.onSurface }]}>华读</Text>
 
-      <View style={[styles.drawerDivider, { backgroundColor: colors.outline + '20' }]} />
+      <ScrollView style={styles.drawerScroll} showsVerticalScrollIndicator={false}>
+        {/* Topic filters */}
+        <Text style={[styles.drawerSection, { color: colors.onSurfaceVariant }]}>话题</Text>
+        <Pressable
+          onPress={() => goHome({ id: null, name: '全部' })}
+          style={[styles.drawerItem, current.id === null && { backgroundColor: colors.primary + '12' }]}
+        >
+          <MaterialCommunityIcons name="newspaper-variant-multiple-outline" size={20} color={current.id === null ? colors.primary : colors.onSurfaceVariant} />
+          <Text style={[styles.drawerItemText, { color: current.id === null ? colors.primary : colors.onSurface }]}>全部文章</Text>
+        </Pressable>
+        {topics.map(topic => (
+          <Pressable
+            key={topic.id}
+            onPress={() => goHome({ id: topic.id, name: topic.name })}
+            style={[styles.drawerItem, current.id === topic.id && { backgroundColor: colors.primary + '12' }]}
+          >
+            <MaterialCommunityIcons name={(topic.icon || 'folder') as any} size={20} color={current.id === topic.id ? colors.primary : colors.onSurfaceVariant} />
+            <Text style={[styles.drawerItemText, { color: current.id === topic.id ? colors.primary : colors.onSurface }]}>{topic.name}</Text>
+          </Pressable>
+        ))}
 
-      <ScrollView style={styles.drawerMenu}>
-        {DRAWER_ITEMS.map((item, index) => {
-          const focused = state.index === index;
-          return (
-            <Pressable
-              key={item.name}
-              onPress={() => navigation.navigate(item.name)}
-              style={[
-                styles.drawerItem,
-                focused && { backgroundColor: colors.primary + '12' },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={(focused ? item.iconFocused : item.icon) as any}
-                size={22}
-                color={focused ? colors.primary : colors.onSurfaceVariant}
-              />
-              <Text style={[styles.drawerItemText, { color: focused ? colors.primary : colors.onSurface }]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+        <View style={[styles.drawerDivider, { backgroundColor: colors.outline + '20' }]} />
+
+        {/* Navigation */}
+        <Text style={[styles.drawerSection, { color: colors.onSurfaceVariant }]}>功能</Text>
+        {[
+          { screen: 'Discover', icon: 'compass-outline', label: '发现订阅' },
+          { screen: 'Bookmarks', icon: 'star-outline', label: '我的收藏' },
+          { screen: 'RecentlyRead', icon: 'history', label: '最近阅读' },
+          { screen: 'FeedManager', icon: 'rss', label: '订阅源管理' },
+          { screen: 'Settings', icon: 'cog-outline', label: '设置' },
+        ].map(item => (
+          <Pressable key={item.screen} onPress={() => goTo(item.screen)} style={styles.drawerItem}>
+            <MaterialCommunityIcons name={item.icon as any} size={20} color={colors.onSurfaceVariant} />
+            <Text style={[styles.drawerItemText, { color: colors.onSurface }]}>{item.label}</Text>
+          </Pressable>
+        ))}
       </ScrollView>
     </View>
   );
 }
 
-function DrawerNavigator() {
-  const { colors } = useTheme();
-  return (
-    <Drawer.Navigator
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
-      screenOptions={{
-        headerShown: false,
-        drawerType: 'front',
-        drawerStyle: { width: 260, backgroundColor: colors.surface },
-        overlayColor: 'rgba(0,0,0,0.4)',
-      }}
-    >
-      <Drawer.Screen name="HomeDrawer" component={HomeScreen} />
-      <Drawer.Screen name="DiscoverDrawer" component={DiscoverScreen} />
-      <Drawer.Screen name="ProfileDrawer" component={ProfileScreen} />
-    </Drawer.Navigator>
-  );
-}
-
+const LazyDiscover = React.lazy(() => import('@/screens/discover/DiscoverScreen'));
+const LazyProfile = React.lazy(() => import('@/screens/profile/ProfileScreen'));
 const LazyReader = React.lazy(() => import('@/screens/reader/ReaderScreen'));
 const LazyBookmarks = React.lazy(() => import('@/screens/profile/BookmarksScreen'));
 const LazyRecentlyRead = React.lazy(() => import('@/screens/profile/RecentScreen'));
@@ -108,35 +114,59 @@ function wrap(Comp: React.LazyExoticComponent<any>) {
   };
 }
 
-export function Navigation() {
+function MainStack() {
   const { colors } = useTheme();
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.surface },
-          headerTintColor: colors.onSurface,
-          headerTitleStyle: { fontWeight: '600' },
-        }}
-      >
-        <Stack.Screen name="Main" component={DrawerNavigator} options={{ headerShown: false }} />
-        <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
-        <Stack.Screen name="RecentlyRead" component={wrap(LazyRecentlyRead)} options={{ headerShown: true, title: '最近阅读' }} />
-        <Stack.Screen name="FeedManager" component={wrap(LazyFeedManager)} options={{ headerShown: true, title: '订阅源管理' }} />
-        <Stack.Screen name="Settings" component={wrap(LazySettings)} options={{ headerShown: true, title: '设置' }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.onSurface,
+        headerTitleStyle: { fontWeight: '600' },
+      }}
+    >
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="Discover" component={wrap(LazyDiscover)} options={{ headerShown: true, title: '发现' }} />
+      <Stack.Screen name="Profile" component={wrap(LazyProfile)} options={{ headerShown: true, title: '我的' }} />
+      <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
+      <Stack.Screen name="RecentlyRead" component={wrap(LazyRecentlyRead)} options={{ headerShown: true, title: '最近阅读' }} />
+      <Stack.Screen name="FeedManager" component={wrap(LazyFeedManager)} options={{ headerShown: true, title: '订阅源管理' }} />
+      <Stack.Screen name="Settings" component={wrap(LazySettings)} options={{ headerShown: true, title: '设置' }} />
+    </Stack.Navigator>
+  );
+}
+
+export function Navigation() {
+  const [topicFilter, setTopicFilter] = useState<TopicFilter>({ id: null, name: '全部' });
+  const { colors } = useTheme();
+
+  return (
+    <TopicFilterContext.Provider value={{ current: topicFilter, setCurrent: setTopicFilter }}>
+      <NavigationContainer>
+        <Drawer.Navigator
+          drawerContent={(props) => <CustomDrawerContent {...props} />}
+          screenOptions={{
+            headerShown: false,
+            drawerType: 'front',
+            drawerStyle: { width: 270, backgroundColor: colors.surface },
+            overlayColor: 'rgba(0,0,0,0.4)',
+            swipeEnabled: true,
+            swipeEdgeWidth: 50,
+          }}
+        >
+          <Drawer.Screen name="MainStack" component={MainStack} />
+        </Drawer.Navigator>
+      </NavigationContainer>
+    </TopicFilterContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
-  drawer: { flex: 1, paddingHorizontal: 12 },
-  drawerHeader: { paddingHorizontal: 16, paddingBottom: 16 },
-  drawerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
-  drawerSubtitle: { fontSize: 13, marginTop: 4 },
-  drawerDivider: { height: StyleSheet.hairlineWidth, marginBottom: 8 },
-  drawerMenu: { flex: 1 },
-  drawerItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12, marginBottom: 2 },
-  drawerItemText: { fontSize: 15, fontWeight: '500' },
+  drawer: { flex: 1, paddingHorizontal: 14 },
+  drawerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5, paddingHorizontal: 14, marginBottom: 16 },
+  drawerScroll: { flex: 1 },
+  drawerSection: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: 14, marginTop: 12, marginBottom: 6 },
+  drawerItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, marginBottom: 1 },
+  drawerItemText: { fontSize: 14, fontWeight: '500' },
+  drawerDivider: { height: StyleSheet.hairlineWidth, marginVertical: 12, marginHorizontal: 14 },
 });

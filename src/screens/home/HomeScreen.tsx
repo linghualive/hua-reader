@@ -5,26 +5,24 @@ import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useTheme } from '@/theme/ThemeContext';
 import { getAllFeeds } from '@/db/feeds';
 import { getUnreadArticles, markAsRead, type ArticleWithFeed } from '@/db/articles';
-import { getAllTopics, type Topic } from '@/db/topics';
+import { getAllTopics } from '@/db/topics';
 import { syncFeedsByTopic } from '@/services/feed-sync';
 import { EmptyState } from '@/components/EmptyState';
 import { relativeTime } from '@/utils/time';
-import type { RootStackParamList, DrawerParamList } from '@/app/Navigation';
+import { useTopicFilter, type RootStackParamList } from '@/app/Navigation';
 
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
-type DrawNav = DrawerNavigationProp<DrawerParamList>;
 
 export default function HomeScreen() {
   const { colors } = useTheme();
   const stackNav = useNavigation<StackNav>();
-  const drawNav = useNavigation<DrawNav>();
+  const drawNav = useNavigation<any>();
+  const { current: topicFilter } = useTopicFilter();
 
   const [hasFeeds, setHasFeeds] = useState<boolean | null>(null);
-  const [topics, setTopics] = useState<Topic[]>([]);
   const [articles, setArticles] = useState<ArticleWithFeed[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -44,9 +42,12 @@ export default function HomeScreen() {
   }, [syncing]);
 
   const loadArticles = useCallback(async () => {
-    const data = await getUnreadArticles();
+    const data = await getUnreadArticles(topicFilter.id ?? undefined);
     setArticles(data);
-  }, []);
+  }, [topicFilter.id]);
+
+  // Reload when topic filter changes
+  useEffect(() => { loadArticles(); }, [topicFilter.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +58,6 @@ export default function HomeScreen() {
         if (feeds.length === 0) return;
 
         const topicList = await getAllTopics();
-        setTopics(topicList);
         await loadArticles();
 
         setSyncing(true);
@@ -76,10 +76,15 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    for (const t of topics) await syncFeedsByTopic(t.id, true);
+    const topicList = await getAllTopics();
+    if (topicFilter.id) {
+      await syncFeedsByTopic(topicFilter.id, true);
+    } else {
+      for (const t of topicList) await syncFeedsByTopic(t.id, true);
+    }
     await loadArticles();
     setRefreshing(false);
-  }, [topics, loadArticles]);
+  }, [topicFilter.id, loadArticles]);
 
   const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
     await markAsRead(article.id);
@@ -88,32 +93,33 @@ export default function HomeScreen() {
   }, [stackNav]);
 
   if (hasFeeds === null) return null;
-  if (!hasFeeds || topics.length === 0) {
+  if (!hasFeeds) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => drawNav.openDrawer()} hitSlop={12} style={styles.menuBtn}>
             <MaterialCommunityIcons name="menu" size={24} color={colors.onSurface} />
           </Pressable>
+          <Text style={[styles.appTitle, { color: colors.onSurface }]}>华读</Text>
         </View>
-        <EmptyState icon="book-open-page-variant-outline" message="欢迎使用华读！打开侧边栏去发现页订阅话题" actionLabel="打开菜单" onAction={() => drawNav.openDrawer()} />
+        <EmptyState icon="book-open-page-variant-outline" message="打开侧边栏，去发现页订阅话题" actionLabel="打开菜单" onAction={() => drawNav.openDrawer()} />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
       <View style={styles.headerRow}>
         <Pressable onPress={() => drawNav.openDrawer()} hitSlop={12} style={styles.menuBtn}>
           <MaterialCommunityIcons name="menu" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.appTitle, { color: colors.onSurface }]}>华读</Text>
+        <Text style={[styles.appTitle, { color: colors.onSurface }]}>
+          {topicFilter.name}
+        </Text>
         {syncing && <Animated.View style={[styles.syncDot, { backgroundColor: colors.primary, opacity: pulseAnim }]} />}
         <View style={{ flex: 1 }} />
       </View>
 
-      {/* Article feed */}
       <FlashList
         data={articles}
         keyExtractor={item => String(item.id)}
