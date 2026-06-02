@@ -190,22 +190,24 @@ export default function HomeScreen() {
           const articles = articlesByTopic.get(topic.id) ?? [];
           return (
             <View key={topic.id} style={{ flex: 1 }}>
-              {articles.length === 0 ? (
-                <EmptyState icon="newspaper-variant-outline" message={syncingTopicId === topic.id ? '正在同步...' : '暂无文章，下拉刷新'} />
-              ) : (
-                <FlashList
-                  data={articles}
-                  keyExtractor={(item) => String(item.id)}
-                  renderItem={({ item }) => (
-                    <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />
-                  )}
-                  estimatedItemSize={90}
-                  contentContainerStyle={{ paddingBottom: 80 }}
-                  refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-                  }
-                />
-              )}
+              <FlashList
+                data={articles}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={({ item }) => (
+                  <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />
+                )}
+                estimatedItemSize={90}
+                contentContainerStyle={{ paddingBottom: 80 }}
+                ListEmptyComponent={
+                  <EmptyState
+                    icon="newspaper-variant-outline"
+                    message={syncingTopicId === topic.id ? '正在同步...' : '暂无文章，下拉刷新'}
+                  />
+                }
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
+              />
             </View>
           );
         })}

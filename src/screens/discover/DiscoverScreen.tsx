@@ -48,7 +48,7 @@ export default function DiscoverScreen() {
       let existing = topics.find((t) => t.name === topic.name);
       const topicId = existing ? existing.id : await insertTopic(topic.name, topic.icon, true);
       for (const feed of topic.feeds) {
-        await insertFeed(feed.title, feed.route, topicId, 'rsshub');
+        await insertFeed(feed.title, feed.route, topicId, feed.type || 'rsshub');
       }
     }
     Alert.alert('订阅成功', `已订阅全部 ${BUILT_IN_TOPICS.length} 个话题`);
@@ -59,7 +59,7 @@ export default function DiscoverScreen() {
     const topics = await getAllTopics();
     let existing = topics.find((t) => t.name === feed.topicName);
     const topicId = existing ? existing.id : await insertTopic(feed.topicName, feed.topicIcon, true);
-    await insertFeed(feed.title, feed.route, topicId, 'rsshub');
+    await insertFeed(feed.title, feed.route, topicId, feed.type || 'rsshub');
     loadSubscribed();
   }, [loadSubscribed]);
 
