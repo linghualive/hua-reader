@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, RefreshControl, Animated, StyleSheet, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import PagerView from 'react-native-pager-view';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,23 +18,25 @@ import type { RootStackParamList, TabParamList } from '@/app/Navigation';
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
 type TabNav = BottomTabNavigationProp<TabParamList>;
 
+interface TabPage { id: number | undefined; name: string; }
+
 export default function HomeScreen() {
   const { colors } = useTheme();
   const stackNav = useNavigation<StackNav>();
   const tabNav = useNavigation<TabNav>();
 
   const [hasFeeds, setHasFeeds] = useState<boolean | null>(null);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedTopicId, setSelectedTopicId] = useState<number | undefined>(undefined);
-  const [articles, setArticles] = useState<ArticleWithFeed[]>([]);
+  const [tabs, setTabs] = useState<TabPage[]>([{ id: undefined, name: '全部' }]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [articlesByTab, setArticlesByTab] = useState<Map<number | undefined, ArticleWithFeed[]>>(new Map());
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  const pagerRef = useRef<PagerView>(null);
   const tabScrollRef = useRef<ScrollView>(null);
   const tabLayouts = useRef<Map<number, { x: number; width: number }>>(new Map());
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
-  // Pulse animation for sync indicator
   useEffect(() => {
     if (syncing) {
       Animated.loop(
@@ -48,17 +50,19 @@ export default function HomeScreen() {
     }
   }, [syncing]);
 
-  const loadArticles = useCallback(async () => {
-    const data = await getUnreadArticles(selectedTopicId);
-    setArticles(data);
-  }, [selectedTopicId]);
+  const loadAllData = useCallback(async () => {
+    const topicList = await getAllTopics();
+    const newTabs: TabPage[] = [{ id: undefined, name: '全部' }];
+    topicList.forEach((t) => newTabs.push({ id: t.id, name: t.name }));
+    setTabs(newTabs);
 
-  const loadTopics = useCallback(async () => {
-    const data = await getAllTopics();
-    setTopics(data);
+    const map = new Map<number | undefined, ArticleWithFeed[]>();
+    for (const tab of newTabs) {
+      map.set(tab.id, await getUnreadArticles(tab.id));
+    }
+    setArticlesByTab(map);
   }, []);
 
-  // On focus: load existing data immediately, sync in background
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -66,47 +70,46 @@ export default function HomeScreen() {
         const feeds = await getAllFeeds();
         setHasFeeds(feeds.length > 0);
         if (feeds.length > 0) {
-          await loadTopics();
-          await loadArticles();
-
-          // Background sync
+          await loadAllData();
           setSyncing(true);
           syncAllFeeds().then(() => {
-            if (!cancelled) {
-              setSyncing(false);
-              loadArticles();
-            }
-          }).catch(() => {
-            if (!cancelled) setSyncing(false);
-          });
+            if (!cancelled) { setSyncing(false); loadAllData(); }
+          }).catch(() => { if (!cancelled) setSyncing(false); });
         }
       })();
       return () => { cancelled = true; };
     }, []),
   );
 
-  useEffect(() => { loadArticles(); }, [selectedTopicId]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await syncAllFeeds().catch(() => {});
-    await loadArticles();
+    await loadAllData();
     setRefreshing(false);
-  }, [loadArticles]);
+  }, [loadAllData]);
 
   const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
     await markAsRead(article.id);
     stackNav.navigate('Reader', { articleId: article.id });
   }, [stackNav]);
 
-  const selectTopic = useCallback((id: number | undefined, index: number) => {
-    setSelectedTopicId(id);
-    const layout = tabLayouts.current.get(index);
+  const onTabPress = useCallback((index: number) => {
+    setSelectedIndex(index);
+    pagerRef.current?.setPage(index);
+  }, []);
+
+  const onPageSelected = useCallback((e: any) => {
+    const index = e.nativeEvent.position;
+    setSelectedIndex(index);
+  }, []);
+
+  useEffect(() => {
+    const layout = tabLayouts.current.get(selectedIndex);
     if (layout && tabScrollRef.current) {
       const screenWidth = Dimensions.get('window').width;
       tabScrollRef.current.scrollTo({ x: Math.max(0, layout.x - screenWidth / 2 + layout.width / 2), animated: true });
     }
-  }, []);
+  }, [selectedIndex]);
 
   if (hasFeeds === null) return null;
 
@@ -122,9 +125,6 @@ export default function HomeScreen() {
       </SafeAreaView>
     );
   }
-
-  const allTabs = [{ id: undefined as number | undefined, name: '全部' }, ...topics.map(t => ({ id: t.id as number | undefined, name: t.name }))];
-  const selectedIndex = allTabs.findIndex(t => t.id === selectedTopicId);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -144,21 +144,19 @@ export default function HomeScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabContent}
         >
-          {allTabs.map((tab, index) => {
-            const active = tab.id === selectedTopicId;
+          {tabs.map((tab, index) => {
+            const active = index === selectedIndex;
             return (
               <Pressable
                 key={tab.name + index}
-                onPress={() => selectTopic(tab.id, index)}
+                onPress={() => onTabPress(index)}
                 onLayout={(e) => {
                   const { x, width } = e.nativeEvent.layout;
                   tabLayouts.current.set(index, { x, width });
                 }}
                 style={[
                   styles.tab,
-                  active
-                    ? { backgroundColor: colors.primary }
-                    : { backgroundColor: colors.surfaceVariant },
+                  active ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceVariant },
                 ]}
               >
                 <Text style={[
@@ -174,23 +172,37 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      {/* Article list */}
-      {articles.length === 0 ? (
-        <EmptyState icon="newspaper-variant-outline" message="暂无文章，下拉刷新试试" />
-      ) : (
-        <FlashList
-          data={articles}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />
-          )}
-          estimatedItemSize={90}
-          contentContainerStyle={{ paddingBottom: 80 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-          }
-        />
-      )}
+      {/* Swipeable article pages */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={0}
+        onPageSelected={onPageSelected}
+      >
+        {tabs.map((tab) => {
+          const articles = articlesByTab.get(tab.id) ?? [];
+          return (
+            <View key={tab.name} style={{ flex: 1 }}>
+              {articles.length === 0 ? (
+                <EmptyState icon="newspaper-variant-outline" message="暂无文章，下拉刷新试试" />
+              ) : (
+                <FlashList
+                  data={articles}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />
+                  )}
+                  estimatedItemSize={90}
+                  contentContainerStyle={{ paddingBottom: 80 }}
+                  refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                  }
+                />
+              )}
+            </View>
+          );
+        })}
+      </PagerView>
     </SafeAreaView>
   );
 }
@@ -208,7 +220,7 @@ function ArticleItem({ article, colors, onPress }: { article: ArticleWithFeed; c
         { backgroundColor: pressed ? colors.surfaceVariant : colors.cardBackground },
       ]}
     >
-      <View style={[styles.cardSourceRow]}>
+      <View style={styles.cardSourceRow}>
         <View style={[styles.sourceDot, { backgroundColor: colors.primary + '60' }]} />
         <Text style={[styles.sourceName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
           {article.feed_title}
@@ -243,6 +255,7 @@ const styles = StyleSheet.create({
   tabContent: { paddingHorizontal: 14, gap: 6 },
   tab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14 },
   tabText: { fontSize: 13 },
+  pager: { flex: 1 },
   card: { paddingHorizontal: 16, paddingVertical: 14 },
   cardSourceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   sourceDot: { width: 6, height: 6, borderRadius: 3 },
