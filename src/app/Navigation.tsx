@@ -152,8 +152,9 @@ export function Navigation() {
             drawerStyle: { width: 270, backgroundColor: colors.surface },
             overlayColor: 'rgba(0,0,0,0.3)',
             swipeEnabled: true,
-            swipeEdgeWidth: 60,
-            swipeMinDistance: 10,
+            swipeEdgeWidth: 40,
+            swipeMinDistance: 5,
+            gestureHandlerProps: { activeOffsetX: [5, 5] },
           }}
         >
           <Drawer.Screen name="MainStack" component={MainStack} />
