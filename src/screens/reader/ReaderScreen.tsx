@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Pressable, StatusBar, StyleSheet, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, Pressable, StatusBar, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -8,7 +8,6 @@ import { READING_BG_OPTIONS } from '@/theme/reading';
 import { getDatabase } from '@/db/database';
 import { cacheArticleContent, toggleBookmark, type ArticleWithFeed } from '@/db/articles';
 import { generateArticleHtml } from '@/services/article-html';
-import { extractFullText } from '@/services/readability';
 import { relativeTime } from '@/utils/time';
 import { estimateReadingTime } from '@/utils/reading-time';
 import { ReaderToolbar } from './ReaderToolbar';
@@ -16,6 +15,46 @@ import { TypographyPanel } from './TypographyPanel';
 import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
+
+const READABILITY_JS = `
+(function() {
+  function extractContent() {
+    var article = document.querySelector('article')
+      || document.querySelector('[role="main"]')
+      || document.querySelector('.post-content, .article-content, .entry-content, .content, main');
+
+    if (!article) {
+      var allPs = document.querySelectorAll('p');
+      if (allPs.length > 3) {
+        var container = document.createElement('div');
+        allPs.forEach(function(p) {
+          if (p.textContent.length > 20) container.appendChild(p.cloneNode(true));
+        });
+        if (container.innerHTML.length > 200) {
+          return container.innerHTML;
+        }
+      }
+      return document.body.innerHTML;
+    }
+    return article.innerHTML;
+  }
+
+  try {
+    var content = extractContent();
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'extracted_content',
+      content: content,
+      title: document.title
+    }));
+  } catch(e) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'extraction_failed',
+      error: e.message
+    }));
+  }
+})();
+true;
+`;
 
 export default function ReaderScreen() {
   const { colors, readingPrefs, setReadingPrefs, colorMode, setColorMode } = useTheme();
@@ -28,6 +67,9 @@ export default function ReaderScreen() {
   const [progress, setProgress] = useState(0);
   const [barsVisible, setBarsVisible] = useState(true);
   const [typographyVisible, setTypographyVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'reader' | 'extracting' | 'webview'>('reader');
+  const extractWebViewRef = useRef<WebView>(null);
 
   useEffect(() => {
     (async () => {
@@ -39,35 +81,33 @@ export default function ReaderScreen() {
         [articleId],
       );
       if (!row) return;
+      setArticle(row);
 
-      let content = row.content || '';
-      if (content.length < 100 && row.url) {
-        try {
-          const extracted = await extractFullText(row.url);
-          if (extracted) {
-            content = extracted;
-            await cacheArticleContent(row.id, extracted);
-          }
-        } catch {}
+      const content = row.content || '';
+      const plainText = content.replace(/<[^>]*>/g, '').trim();
+
+      if (plainText.length > 200) {
+        renderArticle(row, content);
+      } else if (row.url) {
+        setMode('extracting');
+        setLoading(true);
+      } else {
+        renderArticle(row, content || row.summary || '');
       }
-
-      setArticle({ ...row, content });
     })();
   }, [articleId]);
 
-  useEffect(() => {
-    if (!article) return;
-
+  const renderArticle = useCallback((art: ArticleWithFeed, content: string) => {
     const bgOpt = READING_BG_OPTIONS.find(
       (o) => o.backgroundColor === readingPrefs.backgroundColor,
     ) || READING_BG_OPTIONS[0];
 
     const html = generateArticleHtml({
-      title: article.title,
-      feedName: article.feed_title,
-      date: relativeTime(new Date(article.published_at)),
-      readingTime: estimateReadingTime(article.content || article.summary),
-      content: article.content || article.summary || '',
+      title: art.title,
+      feedName: art.feed_title,
+      date: relativeTime(new Date(art.published_at)),
+      readingTime: estimateReadingTime(content),
+      content,
       fontSize: readingPrefs.fontSize,
       lineHeight: readingPrefs.lineHeight,
       backgroundColor: bgOpt.backgroundColor,
@@ -76,7 +116,52 @@ export default function ReaderScreen() {
       accentColor: colors.primary,
     });
     setHtmlContent(html);
-  }, [article, readingPrefs, colors]);
+    setMode('reader');
+    setLoading(false);
+  }, [readingPrefs, colors]);
+
+  // Re-render when prefs change
+  useEffect(() => {
+    if (article && mode === 'reader' && htmlContent) {
+      const content = article.content || article.summary || '';
+      const plainText = content.replace(/<[^>]*>/g, '').trim();
+      if (plainText.length > 0) {
+        renderArticle(article, content);
+      }
+    }
+  }, [readingPrefs, colors]);
+
+  const handleExtractMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'extracted_content' && article) {
+        const content = data.content;
+        const plainText = content.replace(/<[^>]*>/g, '').trim();
+        if (plainText.length > 100) {
+          cacheArticleContent(article.id, content);
+          setArticle((prev) => prev ? { ...prev, content } : prev);
+          renderArticle(article, content);
+        } else {
+          setMode('webview');
+          setLoading(false);
+        }
+      } else if (data.type === 'extraction_failed') {
+        setMode('webview');
+        setLoading(false);
+      } else if (data.type === 'scroll_progress') {
+        setProgress(data.progress);
+      }
+    } catch {}
+  }, [article, renderArticle]);
+
+  const handleReaderMessage = useCallback((event: { nativeEvent: { data: string } }) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'scroll_progress') {
+        setProgress(data.progress);
+      }
+    } catch {}
+  }, []);
 
   const handleBookmark = useCallback(async () => {
     if (!article) return;
@@ -86,49 +171,79 @@ export default function ReaderScreen() {
     );
   }, [article]);
 
-  const handleMessage = useCallback((event: { nativeEvent: { data: string } }) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'scroll_progress') {
-        setProgress(data.progress);
-      }
-    } catch {}
-  }, []);
-
   const isBookmarked = article?.is_bookmarked === 1;
   const isDark = colorMode !== 'light';
+  const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44;
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        translucent
-        backgroundColor="transparent"
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-      />
+      <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* WebView - full screen */}
-      <WebView
-        source={{ html: htmlContent || '<html><body></body></html>' }}
-        style={styles.webView}
-        onMessage={handleMessage}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled
-        javaScriptEnabled
-        originWhitelist={['*']}
-        allowsInlineMediaPlayback
-        mixedContentMode="compatibility"
-        domStorageEnabled
-      />
+      {/* Hidden WebView for content extraction */}
+      {mode === 'extracting' && article?.url && (
+        <WebView
+          ref={extractWebViewRef}
+          source={{ uri: article.url }}
+          style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
+          onLoadEnd={() => {
+            extractWebViewRef.current?.injectJavaScript(READABILITY_JS);
+          }}
+          onMessage={handleExtractMessage}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          onError={() => { setMode('webview'); setLoading(false); }}
+          onHttpError={() => { setMode('webview'); setLoading(false); }}
+        />
+      )}
 
-      {/* Top bar overlay */}
+      {/* Loading indicator */}
+      {loading && (
+        <View style={[styles.loadingOverlay, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>正在获取全文...</Text>
+        </View>
+      )}
+
+      {/* Reader mode: themed HTML */}
+      {mode === 'reader' && htmlContent && (
+        <WebView
+          source={{ html: htmlContent }}
+          style={styles.webView}
+          onMessage={handleReaderMessage}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled
+          javaScriptEnabled
+          originWhitelist={['*']}
+          mixedContentMode="compatibility"
+        />
+      )}
+
+      {/* Webview fallback: show original page */}
+      {mode === 'webview' && article?.url && (
+        <WebView
+          source={{ uri: article.url }}
+          style={[styles.webView, { marginTop: statusBarHeight + 44 }]}
+          showsVerticalScrollIndicator={false}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          mixedContentMode="compatibility"
+        />
+      )}
+
+      {/* Top bar */}
       {barsVisible && (
         <View style={[styles.topBar, { backgroundColor: colors.surface + 'F0' }]}>
-          <View style={{ height: Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44 }} />
+          <View style={{ height: statusBarHeight }} />
           <View style={styles.topBarRow}>
             <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
               <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
             </Pressable>
             <View style={styles.topBarSpacer} />
+            {mode !== 'reader' && article?.url && (
+              <Pressable onPress={() => { setMode('webview'); setLoading(false); }} hitSlop={12} style={styles.barBtn}>
+                <MaterialCommunityIcons name="web" size={22} color={colors.onSurfaceVariant} />
+              </Pressable>
+            )}
             <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
               <MaterialCommunityIcons
                 name={isBookmarked ? 'star' : 'star-outline'}
@@ -140,8 +255,8 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* Bottom toolbar overlay */}
-      {barsVisible && (
+      {/* Bottom toolbar */}
+      {barsVisible && mode === 'reader' && (
         <View style={[styles.bottomBar, { backgroundColor: colors.surface + 'F0' }]}>
           <ReaderToolbar
             progress={progress}
@@ -152,11 +267,8 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* Tap center to toggle bars */}
-      <Pressable
-        style={styles.tapZone}
-        onPress={() => setBarsVisible((v) => !v)}
-      />
+      {/* Tap zone to toggle bars */}
+      <Pressable style={styles.tapZone} onPress={() => setBarsVisible((v) => !v)} />
 
       <TypographyPanel
         visible={typographyVisible}
@@ -171,6 +283,8 @@ export default function ReaderScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   webView: { flex: 1, backgroundColor: 'transparent' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 20 },
+  loadingText: { marginTop: 12, fontSize: 14 },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
   topBarSpacer: { flex: 1 },
