@@ -14,29 +14,39 @@ import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
 
+// Readability extraction via hidden WebView
 const EXTRACT_JS = `
 (function() {
   function extract() {
-    var article = document.querySelector('article')
-      || document.querySelector('[class*="article-content"], [class*="post-content"], [class*="entry-content"]')
-      || document.querySelector('[role="main"]')
-      || document.querySelector('main');
-    if (article) return article.innerHTML;
-
-    var ps = document.querySelectorAll('p');
-    if (ps.length > 3) {
-      var div = document.createElement('div');
-      ps.forEach(function(p) { if (p.textContent.length > 15) div.appendChild(p.cloneNode(true)); });
-      if (div.textContent.length > 100) return div.innerHTML;
+    // Try semantic selectors first
+    var selectors = [
+      'article', '[role="article"]',
+      '.article-content', '.post-content', '.entry-content', '.article-body',
+      '.article_content', '.post_content', '.content-article',
+      '.artical-content-wrap', '.article-detail', '.post-body',
+      'main [class*="content"]', 'main article',
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && el.textContent.trim().length > 100) return el.innerHTML;
     }
+    // Fallback: find the longest container of <p> tags
+    var containers = document.querySelectorAll('div, section, main');
+    var best = null, bestLen = 0;
+    containers.forEach(function(c) {
+      var ps = c.querySelectorAll('p');
+      var len = 0;
+      ps.forEach(function(p) { len += p.textContent.length; });
+      if (len > bestLen && ps.length >= 2) { best = c; bestLen = len; }
+    });
+    if (best && bestLen > 100) return best.innerHTML;
     return null;
   }
-  try {
-    var c = extract();
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extracted', content: c }));
-  } catch(e) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extracted', content: null }));
-  }
+  // Wait for dynamic content
+  setTimeout(function() {
+    var content = extract();
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'extracted', content: content }));
+  }, 1500);
 })(); true;
 `;
 
@@ -56,8 +66,7 @@ const CLEAN_PAGE_JS = `
       '[class*="promotion"]', '[class*="bottom-bar"]', '[class*="bottombar"]',
       '[class*="top-bar"]', '[class*="topbar"]', '[class*="dialog"]',
       'nav', 'footer', 'header:not(.article-header)',
-      '[role="banner"]', '[role="navigation"]',
-      'iframe',
+      '[role="banner"]', '[role="navigation"]', 'iframe',
     ];
     hide.forEach(function(s) {
       try {
@@ -97,6 +106,7 @@ export default function ReaderScreen() {
   const [barsVisible, setBarsVisible] = useState(true);
   const [webLoading, setWebLoading] = useState(false);
   const extractRef = useRef<WebView>(null);
+  const extractTimeout = useRef<ReturnType<typeof setTimeout>>();
 
   const isDark = colorMode !== 'light';
   const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44;
@@ -118,7 +128,12 @@ export default function ReaderScreen() {
     });
   }, [readingPrefs, colors, isDark]);
 
-  // Load article
+  const showReader = useCallback((art: ArticleWithFeed, content: string) => {
+    setReaderHtml(buildReaderHtml(art, content));
+    setMode('reader');
+  }, [buildReaderHtml]);
+
+  // Load article and decide mode
   useEffect(() => {
     (async () => {
       const db = getDatabase();
@@ -131,17 +146,30 @@ export default function ReaderScreen() {
       setArticle(row);
       await markAsRead(row.id);
 
-      const content = row.content || row.summary || '';
-      if (content.trim()) {
-        setReaderHtml(buildReaderHtml(row, content));
-        setMode('reader');
+      // Check if we have cached full content
+      const content = row.content || '';
+      const plainLen = content.replace(/<[^>]*>/g, '').trim().length;
+
+      if (plainLen > 300) {
+        // Good cached content, show directly
+        showReader(row, content);
       } else if (row.url) {
-        setMode('web');
+        // Need to extract full content from URL
+        setMode('loading');
+        // Safety timeout: fall back to web mode after 8s
+        extractTimeout.current = setTimeout(() => {
+          setMode((m) => {
+            if (m === 'loading') return 'web';
+            return m;
+          });
+        }, 8000);
       } else {
-        setReaderHtml(buildReaderHtml(row, '暂无内容'));
-        setMode('reader');
+        // No URL, show whatever we have
+        showReader(row, content || row.summary || '暂无内容');
       }
     })();
+
+    return () => { if (extractTimeout.current) clearTimeout(extractTimeout.current); };
   }, [articleId]);
 
   // Re-render reader on theme change
@@ -156,17 +184,20 @@ export default function ReaderScreen() {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'extracted' && article) {
+        if (extractTimeout.current) clearTimeout(extractTimeout.current);
         if (data.content && data.content.replace(/<[^>]*>/g, '').trim().length > 100) {
+          // Cache the extracted content for future reads
           cacheArticleContent(article.id, data.content);
-          setArticle(prev => prev ? { ...prev, content: data.content } : prev);
-          setReaderHtml(buildReaderHtml(article, data.content));
-          setMode('reader');
+          const updatedArticle = { ...article, content: data.content };
+          setArticle(updatedArticle);
+          showReader(updatedArticle, data.content);
         } else {
+          // Extraction got too little content, show original
           setMode('web');
         }
       }
     } catch {}
-  }, [article, buildReaderHtml]);
+  }, [article, showReader]);
 
   const handleReaderMessage = useCallback((event: { nativeEvent: { data: string } }) => {
     try {
@@ -182,11 +213,8 @@ export default function ReaderScreen() {
   }, [article]);
 
   const toggleMode = useCallback(() => {
-    if (mode === 'reader' && article?.url) {
-      setMode('web');
-    } else if (mode === 'web' && readerHtml) {
-      setMode('reader');
-    }
+    if (mode === 'reader' && article?.url) setMode('web');
+    else if (mode === 'web' && readerHtml) setMode('reader');
   }, [mode, article, readerHtml]);
 
   const isBookmarked = article?.is_bookmarked === 1;
@@ -196,7 +224,30 @@ export default function ReaderScreen() {
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* Reader mode */}
+      {/* Hidden WebView for on-demand content extraction */}
+      {mode === 'loading' && article?.url && (
+        <WebView
+          ref={extractRef}
+          source={{ uri: article.url }}
+          style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
+          onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
+          onMessage={handleExtractMessage}
+          javaScriptEnabled
+          originWhitelist={['*']}
+          onError={() => setMode('web')}
+          onHttpError={() => setMode('web')}
+        />
+      )}
+
+      {/* Loading state */}
+      {mode === 'loading' && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>正在获取全文...</Text>
+        </View>
+      )}
+
+      {/* Reader mode: clean themed content */}
       {mode === 'reader' && readerHtml ? (
         <WebView
           source={{ html: readerHtml }}
@@ -208,7 +259,7 @@ export default function ReaderScreen() {
         />
       ) : null}
 
-      {/* Web mode */}
+      {/* Web mode: original page with ad removal */}
       {mode === 'web' && article?.url ? (
         <WebView
           source={{ uri: article.url }}

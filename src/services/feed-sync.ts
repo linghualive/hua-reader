@@ -17,24 +17,25 @@ export interface SyncResult {
   error?: string;
 }
 
+// Track last sync time per topic to avoid re-syncing within 10 minutes
+const lastSyncByTopic = new Map<number, number>();
+const STALE_TIME = 10 * 60 * 1000;
+
 let instanceIndex = 0;
 
 function getNextInstance(instances: string[]): string {
-  const instance = instances[instanceIndex % instances.length];
+  const inst = instances[instanceIndex % instances.length];
   instanceIndex++;
-  return instance;
+  return inst;
 }
 
 async function getInstances(): Promise<string[]> {
   const custom = await getSetting('rsshub_url');
-  const primary = custom || DEFAULT_RSSHUB_URL;
-  return [primary, ...PUBLIC_RSSHUB_INSTANCES];
+  return [custom || DEFAULT_RSSHUB_URL, ...PUBLIC_RSSHUB_INSTANCES];
 }
 
 function buildFeedUrl(feed: Feed, baseUrl: string): string {
-  if (feed.source_type === 'rsshub') {
-    return `${baseUrl}${feed.url}`;
-  }
+  if (feed.source_type === 'rsshub') return `${baseUrl}${feed.url}`;
   return feed.url;
 }
 
@@ -42,38 +43,36 @@ async function fetchWithTimeout(url: string, timeoutMs: number = 6000): Promise<
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    return response;
+    return await fetch(url, { signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function fetchWithFailover(feed: Feed, instances: string[]): Promise<string> {
+async function fetchFeedXml(feed: Feed, instances: string[]): Promise<string> {
   if (feed.source_type !== 'rsshub') {
-    const response = await fetchWithTimeout(feed.url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.text();
+    const resp = await fetchWithTimeout(feed.url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.text();
   }
 
   const errors: string[] = [];
-  for (let attempt = 0; attempt < instances.length; attempt++) {
-    const instance = getNextInstance(instances);
-    const url = buildFeedUrl(feed, instance);
+  for (let i = 0; i < instances.length; i++) {
+    const inst = getNextInstance(instances);
     try {
-      const response = await fetchWithTimeout(url);
-      if (response.ok) return response.text();
-      errors.push(`${instance}: HTTP ${response.status}`);
+      const resp = await fetchWithTimeout(buildFeedUrl(feed, inst));
+      if (resp.ok) return resp.text();
+      errors.push(`${inst}: ${resp.status}`);
     } catch (err: any) {
-      errors.push(`${instance}: ${err.name === 'AbortError' ? 'timeout' : err.message}`);
+      errors.push(`${inst}: ${err.name === 'AbortError' ? 'timeout' : err.message}`);
     }
   }
   throw new Error(errors.join('; '));
 }
 
-export async function syncFeed(feed: Feed, instances: string[]): Promise<SyncResult> {
+async function syncSingleFeed(feed: Feed, instances: string[]): Promise<SyncResult> {
   try {
-    const xml = await fetchWithFailover(feed, instances);
+    const xml = await fetchFeedXml(feed, instances);
     const parsed = parseRssFeed(xml);
 
     let newArticles = 0;
@@ -86,9 +85,7 @@ export async function syncFeed(feed: Feed, instances: string[]): Promise<SyncRes
         content: item.content,
         url: item.url,
         image_url: item.imageUrl,
-        published_at: item.publishedAt
-          ? new Date(item.publishedAt).toISOString()
-          : new Date().toISOString(),
+        published_at: item.publishedAt ? new Date(item.publishedAt).toISOString() : new Date().toISOString(),
       });
       if (id > 0) newArticles++;
     }
@@ -96,12 +93,16 @@ export async function syncFeed(feed: Feed, instances: string[]): Promise<SyncRes
     await updateFeedLastFetched(feed.id);
     return { feedId: feed.id, feedTitle: feed.title, newArticles };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { feedId: feed.id, feedTitle: feed.title, newArticles: 0, error: message };
+    return { feedId: feed.id, feedTitle: feed.title, newArticles: 0, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
-export async function syncFeedsByTopic(topicId: number): Promise<SyncResult[]> {
+export async function syncFeedsByTopic(topicId: number, force: boolean = false): Promise<SyncResult[]> {
+  if (!force) {
+    const lastSync = lastSyncByTopic.get(topicId);
+    if (lastSync && Date.now() - lastSync < STALE_TIME) return [];
+  }
+
   const feeds = await getFeedsByTopic(topicId);
   const instances = await getInstances();
   const results: SyncResult[] = [];
@@ -109,16 +110,15 @@ export async function syncFeedsByTopic(topicId: number): Promise<SyncResult[]> {
   const batchSize = 3;
   for (let i = 0; i < feeds.length; i += batchSize) {
     const batch = feeds.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map((feed) => syncFeed(feed, instances))
-    );
+    const batchResults = await Promise.all(batch.map((f) => syncSingleFeed(f, instances)));
     results.push(...batchResults);
   }
 
+  lastSyncByTopic.set(topicId, Date.now());
   return results;
 }
 
-export async function syncAllFeeds(): Promise<SyncResult[]> {
+export async function syncAllFeeds(force: boolean = false): Promise<SyncResult[]> {
   const feeds = await getAllFeeds();
   const instances = await getInstances();
   const results: SyncResult[] = [];
@@ -126,9 +126,7 @@ export async function syncAllFeeds(): Promise<SyncResult[]> {
   const batchSize = 3;
   for (let i = 0; i < feeds.length; i += batchSize) {
     const batch = feeds.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map((feed) => syncFeed(feed, instances))
-    );
+    const batchResults = await Promise.all(batch.map((f) => syncSingleFeed(f, instances)));
     results.push(...batchResults);
   }
 

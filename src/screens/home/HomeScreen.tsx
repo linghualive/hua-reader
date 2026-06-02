@@ -28,8 +28,7 @@ export default function HomeScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [articlesByTopic, setArticlesByTopic] = useState<Map<number, ArticleWithFeed[]>>(new Map());
   const [refreshing, setRefreshing] = useState(false);
-  const [syncingTopicId, setSyncingTopicId] = useState<number | null>(null);
-  const syncedTopics = useRef<Set<number>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   const pagerRef = useRef<PagerView>(null);
   const tabScrollRef = useRef<ScrollView>(null);
@@ -37,68 +36,71 @@ export default function HomeScreen() {
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
-    if (syncingTopicId !== null) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
+    if (syncing) {
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ])).start();
     } else {
+      pulseAnim.stopAnimation();
       pulseAnim.setValue(1);
     }
-  }, [syncingTopicId]);
+  }, [syncing]);
 
   const loadArticlesForTopic = useCallback(async (topicId: number) => {
     const articles = await getUnreadArticles(topicId);
-    setArticlesByTopic((prev) => new Map(prev).set(topicId, articles));
+    setArticlesByTopic(prev => new Map(prev).set(topicId, articles));
   }, []);
 
-  const syncTopic = useCallback(async (topicId: number) => {
-    if (syncedTopics.current.has(topicId)) return;
-    setSyncingTopicId(topicId);
-    try {
-      await syncFeedsByTopic(topicId);
-      syncedTopics.current.add(topicId);
-    } catch {}
-    await loadArticlesForTopic(topicId);
-    setSyncingTopicId(null);
-  }, [loadArticlesForTopic]);
-
-  const syncAllInBackground = useCallback(async (topicList: Topic[]) => {
-    for (const t of topicList) {
-      if (!syncedTopics.current.has(t.id)) {
-        setSyncingTopicId(t.id);
-        try {
-          await syncFeedsByTopic(t.id);
-          syncedTopics.current.add(t.id);
-        } catch {}
-        await loadArticlesForTopic(t.id);
-        setSyncingTopicId(null);
-      }
-    }
-  }, [loadArticlesForTopic]);
-
+  // On focus: load data, then sync all topics in background
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         const feeds = await getAllFeeds();
         setHasFeeds(feeds.length > 0);
-        if (feeds.length > 0) {
-          const topicList = await getAllTopics();
-          setTopics(topicList);
-          if (topicList.length > 0) {
-            for (const t of topicList) {
-              await loadArticlesForTopic(t.id);
-            }
-            if (!cancelled) syncAllInBackground(topicList);
-          }
+        if (feeds.length === 0) return;
+
+        const topicList = await getAllTopics();
+        setTopics(topicList);
+
+        // Load existing articles immediately
+        for (const t of topicList) await loadArticlesForTopic(t.id);
+
+        // Background sync all topics (stale time handled in feed-sync)
+        setSyncing(true);
+        for (const t of topicList) {
+          if (cancelled) break;
+          await syncFeedsByTopic(t.id);
+          if (!cancelled) await loadArticlesForTopic(t.id);
         }
+        if (!cancelled) setSyncing(false);
       })();
       return () => { cancelled = true; };
     }, []),
   );
+
+  // Pull to refresh: force sync current topic
+  const onRefresh = useCallback(async () => {
+    if (!topics[selectedIndex]) return;
+    setRefreshing(true);
+    await syncFeedsByTopic(topics[selectedIndex].id, true);
+    await loadArticlesForTopic(topics[selectedIndex].id);
+    setRefreshing(false);
+  }, [topics, selectedIndex, loadArticlesForTopic]);
+
+  const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
+    await markAsRead(article.id);
+    setArticlesByTopic(prev => {
+      const next = new Map(prev);
+      const list = next.get(article.feed_id) ?? [];
+      next.forEach((articles, key) => {
+        next.set(key, articles.map(a => a.id === article.id ? { ...a, is_read: 1 } : a));
+      });
+      return next;
+    });
+    stackNav.navigate('Reader', { articleId: article.id });
+  }, [stackNav]);
 
   const onTabPress = useCallback((index: number) => {
     setSelectedIndex(index);
@@ -106,10 +108,10 @@ export default function HomeScreen() {
   }, []);
 
   const onPageSelected = useCallback((e: any) => {
-    const index = e.nativeEvent.position;
-    setSelectedIndex(index);
+    setSelectedIndex(e.nativeEvent.position);
   }, []);
 
+  // Auto-scroll tab bar to center active tab
   useEffect(() => {
     const layout = tabLayouts.current.get(selectedIndex);
     if (layout && tabScrollRef.current) {
@@ -118,78 +120,33 @@ export default function HomeScreen() {
     }
   }, [selectedIndex]);
 
-  const onRefresh = useCallback(async () => {
-    if (!topics[selectedIndex]) return;
-    setRefreshing(true);
-    const topicId = topics[selectedIndex].id;
-    syncedTopics.current.delete(topicId);
-    setSyncingTopicId(topicId);
-    try {
-      await syncFeedsByTopic(topicId);
-      syncedTopics.current.add(topicId);
-    } catch {}
-    await loadArticlesForTopic(topicId);
-    setSyncingTopicId(null);
-    setRefreshing(false);
-  }, [topics, selectedIndex, loadArticlesForTopic]);
-
-  const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
-    await markAsRead(article.id);
-    stackNav.navigate('Reader', { articleId: article.id });
-  }, [stackNav]);
-
   if (hasFeeds === null) return null;
-
   if (!hasFeeds || topics.length === 0) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-        <EmptyState
-          icon="book-open-page-variant-outline"
-          message="欢迎使用华读！先去发现页订阅一些话题吧"
-          actionLabel="去发现"
-          onAction={() => tabNav.navigate('DiscoverTab')}
-        />
+        <EmptyState icon="book-open-page-variant-outline" message="欢迎使用华读！先去发现页订阅一些话题吧" actionLabel="去发现" onAction={() => tabNav.navigate('DiscoverTab')} />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.outline + '15' }]}>
         <View style={styles.headerTop}>
           <Text style={[styles.appTitle, { color: colors.onSurface }]}>华读</Text>
-          {syncingTopicId !== null && (
-            <Animated.View style={[styles.syncDot, { backgroundColor: colors.primary, opacity: pulseAnim }]} />
-          )}
+          {syncing && <Animated.View style={[styles.syncDot, { backgroundColor: colors.primary, opacity: pulseAnim }]} />}
         </View>
-
-        <ScrollView
-          ref={tabScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabContent}
-        >
+        <ScrollView ref={tabScrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
           {topics.map((topic, index) => {
             const active = index === selectedIndex;
             return (
               <Pressable
                 key={topic.id}
                 onPress={() => onTabPress(index)}
-                onLayout={(e) => {
-                  const { x, width } = e.nativeEvent.layout;
-                  tabLayouts.current.set(index, { x, width });
-                }}
-                style={[
-                  styles.tab,
-                  active ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceVariant },
-                ]}
+                onLayout={e => { tabLayouts.current.set(index, { x: e.nativeEvent.layout.x, width: e.nativeEvent.layout.width }); }}
+                style={[styles.tab, active ? { backgroundColor: colors.primary } : { backgroundColor: colors.surfaceVariant }]}
               >
-                <Text style={[
-                  styles.tabText,
-                  { color: active ? colors.onPrimary : colors.onSurfaceVariant },
-                  active && { fontWeight: '600' },
-                ]}>
+                <Text style={[styles.tabText, { color: active ? colors.onPrimary : colors.onSurfaceVariant }, active && { fontWeight: '600' }]}>
                   {topic.name}
                 </Text>
               </Pressable>
@@ -198,34 +155,19 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      {/* Swipeable pages per topic */}
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={0}
-        onPageSelected={onPageSelected}
-      >
-        {topics.map((topic) => {
+      <PagerView ref={pagerRef} style={styles.pager} initialPage={0} onPageSelected={onPageSelected}>
+        {topics.map(topic => {
           const articles = articlesByTopic.get(topic.id) ?? [];
           return (
             <View key={topic.id} style={{ flex: 1 }}>
               <FlashList
                 data={articles}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={({ item }) => (
-                  <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />
-                )}
+                keyExtractor={item => String(item.id)}
+                renderItem={({ item }) => <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />}
                 estimatedItemSize={90}
                 contentContainerStyle={{ paddingBottom: 80 }}
-                ListEmptyComponent={
-                  <EmptyState
-                    icon="newspaper-variant-outline"
-                    message={syncingTopicId === topic.id ? '正在同步...' : '暂无文章，下拉刷新'}
-                  />
-                }
-                refreshControl={
-                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-                }
+                ListEmptyComponent={<EmptyState icon="newspaper-variant-outline" message={syncing ? '正在同步...' : '暂无文章，下拉刷新'} />}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
               />
             </View>
           );
@@ -241,35 +183,16 @@ function ArticleItem({ article, colors, onPress }: { article: ArticleWithFeed; c
   const summary = (article.summary || '').replace(/<[^>]*>/g, '').trim();
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        { backgroundColor: pressed ? colors.surfaceVariant : colors.cardBackground },
-      ]}
-    >
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: pressed ? colors.surfaceVariant : colors.cardBackground }]}>
       <View style={styles.cardSourceRow}>
         <View style={[styles.sourceDot, { backgroundColor: colors.primary + '60' }]} />
-        <Text style={[styles.sourceName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
-          {article.feed_title}
-        </Text>
+        <Text style={[styles.sourceName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>{article.feed_title}</Text>
         <Text style={[styles.timeText, { color: colors.onSurfaceVariant + 'AA' }]}>{time}</Text>
       </View>
-      <Text
-        style={[
-          styles.cardTitle,
-          { color: isRead ? colors.onSurfaceVariant : colors.onSurface },
-          !isRead && { fontWeight: '600' },
-        ]}
-        numberOfLines={2}
-      >
+      <Text style={[styles.cardTitle, { color: isRead ? colors.onSurfaceVariant : colors.onSurface }, !isRead && { fontWeight: '600' }]} numberOfLines={2}>
         {article.title}
       </Text>
-      {summary ? (
-        <Text style={[styles.cardSummary, { color: colors.onSurfaceVariant + 'CC' }]} numberOfLines={2}>
-          {summary}
-        </Text>
-      ) : null}
+      {summary ? <Text style={[styles.cardSummary, { color: colors.onSurfaceVariant + 'CC' }]} numberOfLines={2}>{summary}</Text> : null}
     </Pressable>
   );
 }
