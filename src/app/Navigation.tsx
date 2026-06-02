@@ -148,11 +148,12 @@ export function Navigation() {
           drawerContent={(props) => <CustomDrawerContent {...props} />}
           screenOptions={{
             headerShown: false,
-            drawerType: 'front',
+            drawerType: 'slide',
             drawerStyle: { width: 270, backgroundColor: colors.surface },
-            overlayColor: 'rgba(0,0,0,0.4)',
+            overlayColor: 'rgba(0,0,0,0.3)',
             swipeEnabled: true,
-            swipeEdgeWidth: 80,
+            swipeEdgeWidth: 60,
+            swipeMinDistance: 10,
           }}
         >
           <Drawer.Screen name="MainStack" component={MainStack} />
