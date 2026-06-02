@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Pressable, StatusBar, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { View, Text, Pressable, StatusBar, ActivityIndicator, Alert, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -239,7 +239,9 @@ export default function ReaderScreen() {
       const translated = await translateHtmlParagraphs(content);
       showReader(article, translated);
       setIsTranslated(true);
-    } catch {}
+    } catch (err) {
+      Alert.alert('翻译失败', err instanceof Error ? err.message : '请检查网络连接');
+    }
     setTranslating(false);
   }, [article, isTranslated, originalContent, showReader]);
 

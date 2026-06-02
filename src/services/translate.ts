@@ -1,4 +1,5 @@
 const GOOGLE_TRANSLATE_URL = 'https://translate.googleapis.com/translate_a/single';
+const MYMEMORY_URL = 'https://api.mymemory.translated.net/get';
 
 function isChinese(text: string): boolean {
   const chineseChars = text.match(/[一-鿿]/g) || [];
@@ -6,75 +7,80 @@ function isChinese(text: string): boolean {
   return totalChars > 0 && chineseChars.length / totalChars > 0.3;
 }
 
-export async function detectAndTranslate(text: string): Promise<{ translated: string; targetLang: string }> {
-  const targetLang = isChinese(text) ? 'en' : 'zh-CN';
-  const translated = await translateText(text, 'auto', targetLang);
-  return { translated, targetLang };
+async function googleTranslate(text: string, from: string, to: string): Promise<string> {
+  const params = new URLSearchParams({ client: 'gtx', sl: from, tl: to, dt: 't', q: text });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`${GOOGLE_TRANSLATE_URL}?${params}`, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    return (data[0] as any[]).map((s: any) => s[0]).join('');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function myMemoryTranslate(text: string, from: string, to: string): Promise<string> {
+  const langPair = `${from === 'auto' ? 'en' : from}|${to}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`${MYMEMORY_URL}?q=${encodeURIComponent(text.slice(0, 500))}&langpair=${langPair}`, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    return data?.responseData?.translatedText || '';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function translateText(text: string, from: string = 'auto', to: string = 'zh-CN'): Promise<string> {
-  const params = new URLSearchParams({
-    client: 'gtx',
-    sl: from,
-    tl: to,
-    dt: 't',
-    q: text,
-  });
-
-  const response = await fetch(`${GOOGLE_TRANSLATE_URL}?${params}`);
-  if (!response.ok) throw new Error(`Translation failed: ${response.status}`);
-
-  const data = await response.json();
-  return (data[0] as any[]).map((s: any) => s[0]).join('');
+  // Try Google first, fallback to MyMemory
+  try {
+    return await googleTranslate(text, from, to);
+  } catch {
+    return await myMemoryTranslate(text, from, to);
+  }
 }
 
 export async function translateHtmlParagraphs(html: string): Promise<string> {
-  // Detect language from first chunk of text
   const allText = html.replace(/<[^>]*>/g, '').trim();
-  if (!allText) return html;
+  if (!allText) throw new Error('没有可翻译的内容');
+
   const targetLang = isChinese(allText) ? 'en' : 'zh-CN';
-  const labelFrom = targetLang === 'en' ? '中' : 'EN';
   const labelTo = targetLang === 'en' ? 'EN' : '中';
 
-  // Match all block-level content
   const blockRegex = /<(p|h[1-6]|li|blockquote|div)[^>]*>[\s\S]*?<\/\1>/gi;
   const blocks = html.match(blockRegex) || [];
 
   if (blocks.length === 0) {
+    // No block elements, translate the whole text
     const translated = await translateText(allText, 'auto', targetLang);
+    if (!translated) throw new Error('翻译返回为空');
     return html + buildTranslationBlock(translated, labelTo);
   }
 
   let result = html;
-  const batchSize = 3;
+  let translatedCount = 0;
 
-  for (let i = 0; i < blocks.length; i += batchSize) {
-    const batch = blocks.slice(i, i + batchSize);
-    const textsToTranslate = batch
-      .map(b => b.replace(/<[^>]*>/g, '').trim())
-      .filter(t => t.length > 5);
-
-    if (textsToTranslate.length === 0) continue;
+  // Translate one by one to avoid overwhelming the API
+  for (const block of blocks) {
+    const plainText = block.replace(/<[^>]*>/g, '').trim();
+    if (plainText.length <= 5) continue;
 
     try {
-      const translations = await Promise.all(
-        textsToTranslate.map(t => translateText(t, 'auto', targetLang))
-      );
-
-      let tIdx = 0;
-      for (const block of batch) {
-        const plainText = block.replace(/<[^>]*>/g, '').trim();
-        if (plainText.length <= 5) continue;
-        const translated = translations[tIdx++];
-        if (translated && translated !== plainText) {
-          result = result.replace(block, block + buildTranslationBlock(translated, labelTo));
-        }
+      const translated = await translateText(plainText, 'auto', targetLang);
+      if (translated && translated !== plainText) {
+        result = result.replace(block, block + buildTranslationBlock(translated, labelTo));
+        translatedCount++;
       }
     } catch {
-      // Skip failed batch
+      // Skip this paragraph, continue with next
     }
   }
 
+  if (translatedCount === 0) throw new Error('翻译失败，请检查网络');
   return result;
 }
 
