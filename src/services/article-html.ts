@@ -24,6 +24,7 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      max-width: 100%;
     }
 
     body {
@@ -36,6 +37,7 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
       -webkit-text-size-adjust: 100%;
       word-wrap: break-word;
       overflow-wrap: break-word;
+      overflow-x: hidden;
     }
 
     .article-header {
@@ -66,12 +68,26 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
     }
 
     .article-content img {
-      max-width: 100%;
-      height: auto;
+      max-width: 100% !important;
+      width: auto !important;
+      height: auto !important;
       border-radius: 8px;
       margin: 12px 0;
       display: block;
       object-fit: contain;
+    }
+
+    .article-content table {
+      display: block;
+      overflow-x: auto;
+    }
+
+    .article-content pre {
+      overflow-x: auto;
+    }
+
+    .article-content iframe, .article-content video, .article-content embed {
+      max-width: 100% !important;
     }
 
     .article-content a {
