@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Pressable, StyleSheet, Animated } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Pressable, StatusBar, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -30,19 +29,6 @@ export default function ReaderScreen() {
   const [barsVisible, setBarsVisible] = useState(true);
   const [typographyVisible, setTypographyVisible] = useState(false);
 
-  const barsOpacity = useRef(new Animated.Value(1)).current;
-
-  const toggleBars = useCallback(() => {
-    const toVisible = !barsVisible;
-    setBarsVisible(toVisible);
-    Animated.timing(barsOpacity, {
-      toValue: toVisible ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [barsVisible, barsOpacity]);
-
-  // Load article from DB
   useEffect(() => {
     (async () => {
       const db = getDatabase();
@@ -54,21 +40,21 @@ export default function ReaderScreen() {
       );
       if (!row) return;
 
-      // If no content or too short, try extracting full text
       let content = row.content || '';
       if (content.length < 100 && row.url) {
-        const extracted = await extractFullText(row.url);
-        if (extracted) {
-          content = extracted;
-          await cacheArticleContent(row.id, extracted);
-        }
+        try {
+          const extracted = await extractFullText(row.url);
+          if (extracted) {
+            content = extracted;
+            await cacheArticleContent(row.id, extracted);
+          }
+        } catch {}
       }
 
       setArticle({ ...row, content });
     })();
   }, [articleId]);
 
-  // Generate HTML whenever article or prefs change
   useEffect(() => {
     if (!article) return;
 
@@ -106,62 +92,72 @@ export default function ReaderScreen() {
       if (data.type === 'scroll_progress') {
         setProgress(data.progress);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
-  const toggleNightMode = useCallback(() => {
-    setColorMode(colorMode === 'light' ? 'dark' : 'light');
-  }, [colorMode, setColorMode]);
-
   const isBookmarked = article?.is_bookmarked === 1;
+  const isDark = colorMode !== 'light';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top bar */}
-      <Animated.View style={[styles.topBar, { opacity: barsOpacity, backgroundColor: colors.surface }]}>
-        <SafeAreaView edges={['top']} style={styles.topBarInner}>
-          <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
-          </Pressable>
-          <View style={styles.topBarSpacer} />
-          <Pressable onPress={handleBookmark} hitSlop={12} style={styles.bookmarkButton}>
-            <MaterialCommunityIcons
-              name={isBookmarked ? 'star' : 'star-outline'}
-              size={24}
-              color={isBookmarked ? colors.primary : colors.onSurface}
-            />
-          </Pressable>
-        </SafeAreaView>
-      </Animated.View>
+    <View style={styles.container}>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+      />
 
-      {/* WebView */}
-      <Pressable style={styles.webViewContainer} onPress={toggleBars}>
-        {htmlContent ? (
-          <WebView
-            source={{ html: htmlContent }}
-            style={styles.webView}
-            onMessage={handleMessage}
-            showsVerticalScrollIndicator={false}
-            scrollEnabled
-            javaScriptEnabled
-            originWhitelist={['*']}
+      {/* WebView - full screen */}
+      <WebView
+        source={{ html: htmlContent || '<html><body></body></html>' }}
+        style={styles.webView}
+        onMessage={handleMessage}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled
+        javaScriptEnabled
+        originWhitelist={['*']}
+        allowsInlineMediaPlayback
+        mixedContentMode="compatibility"
+        domStorageEnabled
+      />
+
+      {/* Top bar overlay */}
+      {barsVisible && (
+        <View style={[styles.topBar, { backgroundColor: colors.surface + 'F0' }]}>
+          <View style={{ height: Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 44 }} />
+          <View style={styles.topBarRow}>
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.onSurface} />
+            </Pressable>
+            <View style={styles.topBarSpacer} />
+            <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
+              <MaterialCommunityIcons
+                name={isBookmarked ? 'star' : 'star-outline'}
+                size={24}
+                color={isBookmarked ? colors.primary : colors.onSurface}
+              />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Bottom toolbar overlay */}
+      {barsVisible && (
+        <View style={[styles.bottomBar, { backgroundColor: colors.surface + 'F0' }]}>
+          <ReaderToolbar
+            progress={progress}
+            onToggleTypography={() => setTypographyVisible(true)}
+            onToggleNightMode={() => setColorMode(isDark ? 'light' : 'dark')}
+            isNightMode={isDark}
           />
-        ) : null}
-      </Pressable>
+        </View>
+      )}
 
-      {/* Bottom toolbar */}
-      <Animated.View style={{ opacity: barsOpacity }}>
-        <ReaderToolbar
-          progress={progress}
-          onToggleTypography={() => setTypographyVisible(true)}
-          onToggleNightMode={toggleNightMode}
-          isNightMode={colorMode !== 'light'}
-        />
-      </Animated.View>
+      {/* Tap center to toggle bars */}
+      <Pressable
+        style={styles.tapZone}
+        onPress={() => setBarsVisible((v) => !v)}
+      />
 
-      {/* Typography panel */}
       <TypographyPanel
         visible={typographyVisible}
         onClose={() => setTypographyVisible(false)}
@@ -173,36 +169,12 @@ export default function ReaderScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  topBarInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-  },
-  backButton: {
-    padding: 8,
-  },
-  topBarSpacer: {
-    flex: 1,
-  },
-  bookmarkButton: {
-    padding: 8,
-  },
-  webViewContainer: {
-    flex: 1,
-  },
-  webView: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
+  container: { flex: 1 },
+  webView: { flex: 1, backgroundColor: 'transparent' },
+  topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
+  topBarSpacer: { flex: 1 },
+  barBtn: { padding: 8 },
+  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingBottom: 20 },
+  tapZone: { position: 'absolute', top: '30%', bottom: '30%', left: '20%', right: '20%', zIndex: 5 },
 });

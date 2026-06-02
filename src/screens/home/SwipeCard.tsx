@@ -22,7 +22,7 @@ export function SwipeCard({ article, onPress, onBookmark }: SwipeCardProps) {
   const previewText = article.summary || '';
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.cardBackground, height: SCREEN_HEIGHT - 180 }]}>
+    <View style={[styles.card, { backgroundColor: colors.cardBackground, height: SCREEN_HEIGHT - 220 }]}>
       <View style={styles.header}>
         <Pressable onPress={onBookmark} hitSlop={12}>
           <MaterialCommunityIcons

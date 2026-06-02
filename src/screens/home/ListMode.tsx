@@ -155,6 +155,7 @@ export function ListMode() {
                     />
                   )}
                   estimatedItemSize={100}
+                  contentContainerStyle={{ paddingBottom: 80 }}
                   refreshControl={
                     <RefreshControl
                       refreshing={refreshing}

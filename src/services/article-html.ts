@@ -18,6 +18,7 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="referrer" content="no-referrer" />
   <style>
     * {
       margin: 0;
@@ -70,6 +71,7 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
       border-radius: 8px;
       margin: 12px 0;
       display: block;
+      object-fit: contain;
     }
 
     .article-content a {
@@ -211,6 +213,8 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
         img.removeAttribute('width');
         img.removeAttribute('height');
         img.setAttribute('loading', 'lazy');
+        img.setAttribute('referrerpolicy', 'no-referrer');
+        img.onerror = function() { this.style.display = 'none'; };
       });
 
       // Report scroll progress

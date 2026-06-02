@@ -10,7 +10,7 @@ function AppContent() {
 
   return (
     <>
-      <StatusBar style={barStyle} />
+      <StatusBar style={barStyle} translucent />
       <Navigation />
     </>
   );
