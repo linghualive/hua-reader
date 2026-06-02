@@ -10,7 +10,7 @@ import { useTheme } from '@/theme/ThemeContext';
 import { getAllFeeds } from '@/db/feeds';
 import { getUnreadArticles, markAsRead, type ArticleWithFeed } from '@/db/articles';
 import { getAllTopics, type Topic } from '@/db/topics';
-import { syncAllFeeds } from '@/services/feed-sync';
+import { syncFeedsByTopic } from '@/services/feed-sync';
 import { EmptyState } from '@/components/EmptyState';
 import { relativeTime } from '@/utils/time';
 import type { RootStackParamList, TabParamList } from '@/app/Navigation';
@@ -18,19 +18,18 @@ import type { RootStackParamList, TabParamList } from '@/app/Navigation';
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
 type TabNav = BottomTabNavigationProp<TabParamList>;
 
-interface TabPage { id: number | undefined; name: string; }
-
 export default function HomeScreen() {
   const { colors } = useTheme();
   const stackNav = useNavigation<StackNav>();
   const tabNav = useNavigation<TabNav>();
 
   const [hasFeeds, setHasFeeds] = useState<boolean | null>(null);
-  const [tabs, setTabs] = useState<TabPage[]>([{ id: undefined, name: '全部' }]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [articlesByTab, setArticlesByTab] = useState<Map<number | undefined, ArticleWithFeed[]>>(new Map());
+  const [articlesByTopic, setArticlesByTopic] = useState<Map<number, ArticleWithFeed[]>>(new Map());
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncingTopicId, setSyncingTopicId] = useState<number | null>(null);
+  const syncedTopics = useRef<Set<number>>(new Set());
 
   const pagerRef = useRef<PagerView>(null);
   const tabScrollRef = useRef<ScrollView>(null);
@@ -38,7 +37,7 @@ export default function HomeScreen() {
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
-    if (syncing) {
+    if (syncingTopicId !== null) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
@@ -48,60 +47,56 @@ export default function HomeScreen() {
     } else {
       pulseAnim.setValue(1);
     }
-  }, [syncing]);
+  }, [syncingTopicId]);
 
-  const loadAllData = useCallback(async () => {
-    const topicList = await getAllTopics();
-    const newTabs: TabPage[] = [{ id: undefined, name: '全部' }];
-    topicList.forEach((t) => newTabs.push({ id: t.id, name: t.name }));
-    setTabs(newTabs);
-
-    const map = new Map<number | undefined, ArticleWithFeed[]>();
-    for (const tab of newTabs) {
-      map.set(tab.id, await getUnreadArticles(tab.id));
-    }
-    setArticlesByTab(map);
+  const loadArticlesForTopic = useCallback(async (topicId: number) => {
+    const articles = await getUnreadArticles(topicId);
+    setArticlesByTopic((prev) => new Map(prev).set(topicId, articles));
   }, []);
+
+  const syncTopic = useCallback(async (topicId: number, force: boolean = false) => {
+    if (!force && syncedTopics.current.has(topicId)) return;
+    setSyncingTopicId(topicId);
+    try {
+      await syncFeedsByTopic(topicId);
+      syncedTopics.current.add(topicId);
+    } catch {}
+    await loadArticlesForTopic(topicId);
+    setSyncingTopicId(null);
+  }, [loadArticlesForTopic]);
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
       (async () => {
         const feeds = await getAllFeeds();
         setHasFeeds(feeds.length > 0);
         if (feeds.length > 0) {
-          await loadAllData();
-          setSyncing(true);
-          syncAllFeeds().then(() => {
-            if (!cancelled) { setSyncing(false); loadAllData(); }
-          }).catch(() => { if (!cancelled) setSyncing(false); });
+          const topicList = await getAllTopics();
+          setTopics(topicList);
+          if (topicList.length > 0) {
+            // Load existing articles for all topics
+            for (const t of topicList) {
+              await loadArticlesForTopic(t.id);
+            }
+            // Sync first topic
+            syncTopic(topicList[0].id);
+          }
         }
       })();
-      return () => { cancelled = true; };
     }, []),
   );
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await syncAllFeeds().catch(() => {});
-    await loadAllData();
-    setRefreshing(false);
-  }, [loadAllData]);
-
-  const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
-    await markAsRead(article.id);
-    stackNav.navigate('Reader', { articleId: article.id });
-  }, [stackNav]);
 
   const onTabPress = useCallback((index: number) => {
     setSelectedIndex(index);
     pagerRef.current?.setPage(index);
-  }, []);
+    if (topics[index]) syncTopic(topics[index].id);
+  }, [topics, syncTopic]);
 
   const onPageSelected = useCallback((e: any) => {
     const index = e.nativeEvent.position;
     setSelectedIndex(index);
-  }, []);
+    if (topics[index]) syncTopic(topics[index].id);
+  }, [topics, syncTopic]);
 
   useEffect(() => {
     const layout = tabLayouts.current.get(selectedIndex);
@@ -111,9 +106,22 @@ export default function HomeScreen() {
     }
   }, [selectedIndex]);
 
+  const onRefresh = useCallback(async () => {
+    if (!topics[selectedIndex]) return;
+    setRefreshing(true);
+    syncedTopics.current.delete(topics[selectedIndex].id);
+    await syncTopic(topics[selectedIndex].id, true);
+    setRefreshing(false);
+  }, [topics, selectedIndex, syncTopic]);
+
+  const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
+    await markAsRead(article.id);
+    stackNav.navigate('Reader', { articleId: article.id });
+  }, [stackNav]);
+
   if (hasFeeds === null) return null;
 
-  if (!hasFeeds) {
+  if (!hasFeeds || topics.length === 0) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <EmptyState
@@ -132,23 +140,22 @@ export default function HomeScreen() {
       <View style={[styles.header, { borderBottomColor: colors.outline + '15' }]}>
         <View style={styles.headerTop}>
           <Text style={[styles.appTitle, { color: colors.onSurface }]}>华读</Text>
-          {syncing && (
+          {syncingTopicId !== null && (
             <Animated.View style={[styles.syncDot, { backgroundColor: colors.primary, opacity: pulseAnim }]} />
           )}
         </View>
 
-        {/* Topic tabs */}
         <ScrollView
           ref={tabScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabContent}
         >
-          {tabs.map((tab, index) => {
+          {topics.map((topic, index) => {
             const active = index === selectedIndex;
             return (
               <Pressable
-                key={tab.name + index}
+                key={topic.id}
                 onPress={() => onTabPress(index)}
                 onLayout={(e) => {
                   const { x, width } = e.nativeEvent.layout;
@@ -164,7 +171,7 @@ export default function HomeScreen() {
                   { color: active ? colors.onPrimary : colors.onSurfaceVariant },
                   active && { fontWeight: '600' },
                 ]}>
-                  {tab.name}
+                  {topic.name}
                 </Text>
               </Pressable>
             );
@@ -172,19 +179,19 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      {/* Swipeable article pages */}
+      {/* Swipeable pages per topic */}
       <PagerView
         ref={pagerRef}
         style={styles.pager}
         initialPage={0}
         onPageSelected={onPageSelected}
       >
-        {tabs.map((tab) => {
-          const articles = articlesByTab.get(tab.id) ?? [];
+        {topics.map((topic) => {
+          const articles = articlesByTopic.get(topic.id) ?? [];
           return (
-            <View key={tab.name} style={{ flex: 1 }}>
+            <View key={topic.id} style={{ flex: 1 }}>
               {articles.length === 0 ? (
-                <EmptyState icon="newspaper-variant-outline" message="暂无文章，下拉刷新试试" />
+                <EmptyState icon="newspaper-variant-outline" message={syncingTopicId === topic.id ? '正在同步...' : '暂无文章，下拉刷新'} />
               ) : (
                 <FlashList
                   data={articles}

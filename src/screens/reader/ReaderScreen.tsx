@@ -10,6 +10,30 @@ import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
 
+const CLEAN_PAGE_JS = `
+(function() {
+  var selectors = [
+    '[class*="ad-"]', '[class*="ads-"]', '[class*="advert"]', '[id*="ad-"]', '[id*="ads-"]',
+    '[class*="banner"]', '[class*="popup"]', '[class*="modal"]', '[class*="overlay"]',
+    '[class*="sidebar"]', '[class*="recommend"]', '[class*="related"]',
+    '[class*="share"]', '[class*="social"]', '[class*="comment"]',
+    'nav', 'footer', 'header', '[role="banner"]', '[role="navigation"]',
+    '[class*="toolbar"]', '[class*="sticky"]', '[class*="fixed"]',
+    '[class*="download"]', '[class*="app-download"]', '[class*="open-app"]',
+    '[class*="guide"]', '[class*="toast"]', '[class*="mask"]',
+    'iframe[src*="ad"]', 'iframe[src*="google"]',
+  ];
+  selectors.forEach(function(sel) {
+    document.querySelectorAll(sel).forEach(function(el) {
+      el.style.display = 'none';
+    });
+  });
+  document.body.style.overflow = 'auto';
+  document.documentElement.style.overflow = 'auto';
+})();
+true;
+`;
+
 const DARK_MODE_JS = `
 (function() {
   var style = document.createElement('style');
@@ -106,7 +130,7 @@ export default function ReaderScreen() {
           onLoadEnd={() => setLoading(false)}
           startInLoadingState={false}
           forceDarkOn={isDark}
-          injectedJavaScript={isDark ? DARK_MODE_JS : undefined}
+          injectedJavaScript={CLEAN_PAGE_JS + (isDark ? DARK_MODE_JS : '')}
         />
       ) : null}
 

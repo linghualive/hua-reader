@@ -1,4 +1,4 @@
-import { getAllFeeds, updateFeedLastFetched, type Feed } from '@/db/feeds';
+import { getAllFeeds, getFeedsByTopic, updateFeedLastFetched, type Feed } from '@/db/feeds';
 import { insertArticle } from '@/db/articles';
 import { getSetting } from '@/db/settings';
 import { parseRssFeed } from './rss-parser';
@@ -101,12 +101,28 @@ export async function syncFeed(feed: Feed, instances: string[]): Promise<SyncRes
   }
 }
 
+export async function syncFeedsByTopic(topicId: number): Promise<SyncResult[]> {
+  const feeds = await getFeedsByTopic(topicId);
+  const instances = await getInstances();
+  const results: SyncResult[] = [];
+
+  const batchSize = 3;
+  for (let i = 0; i < feeds.length; i += batchSize) {
+    const batch = feeds.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((feed) => syncFeed(feed, instances))
+    );
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
 export async function syncAllFeeds(): Promise<SyncResult[]> {
   const feeds = await getAllFeeds();
   const instances = await getInstances();
   const results: SyncResult[] = [];
 
-  // Sync 3 feeds concurrently to speed up, but not overwhelm servers
   const batchSize = 3;
   for (let i = 0; i < feeds.length; i += batchSize) {
     const batch = feeds.slice(i, i + batchSize);
