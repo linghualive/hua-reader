@@ -10,6 +10,26 @@ import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
 
+const DARK_MODE_JS = `
+(function() {
+  var style = document.createElement('style');
+  style.textContent = \`
+    html, body {
+      background-color: #121212 !important;
+      color: #e0e0e0 !important;
+    }
+    * {
+      border-color: #333 !important;
+    }
+    img { opacity: 0.9; }
+    a { color: #82b1ff !important; }
+  \`;
+  document.head.appendChild(style);
+  document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', 'dark');
+})();
+true;
+`;
+
 export default function ReaderScreen() {
   const { colors, colorMode } = useTheme();
   const navigation = useNavigation();
@@ -76,7 +96,7 @@ export default function ReaderScreen() {
       {article?.url ? (
         <WebView
           source={{ uri: article.url }}
-          style={styles.webView}
+          style={[styles.webView, { backgroundColor: colors.background }]}
           showsVerticalScrollIndicator={false}
           javaScriptEnabled
           domStorageEnabled
@@ -85,6 +105,8 @@ export default function ReaderScreen() {
           onLoadStart={() => setLoading(true)}
           onLoadEnd={() => setLoading(false)}
           startInLoadingState={false}
+          forceDarkOn={isDark}
+          injectedJavaScript={isDark ? DARK_MODE_JS : undefined}
         />
       ) : null}
 
