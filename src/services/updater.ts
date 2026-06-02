@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system';
-import * as IntentLauncher from 'expo-intent-launcher';
+import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Alert, Linking } from 'react-native';
 
 const GITHUB_REPO = 'linghualive/hua-reader';
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
@@ -53,10 +53,36 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
 
 export async function downloadAndInstallApk(url: string): Promise<void> {
   const fileUri = FileSystem.cacheDirectory + 'hua-reader-update.apk';
-  const download = await FileSystem.downloadAsync(url, fileUri);
-  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-    data: download.uri,
-    type: 'application/vnd.android.package-archive',
-    flags: 1,
-  });
+
+  const callback = (progress: FileSystem.DownloadProgressData) => {
+    const pct = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+    // Could emit progress here if needed
+  };
+
+  const downloadResumable = FileSystem.createDownloadResumable(url, fileUri, {}, callback);
+  const result = await downloadResumable.downloadAsync();
+
+  if (!result?.uri) {
+    Alert.alert('下载失败', '请稍后重试');
+    return;
+  }
+
+  // Use Sharing to open the APK file - this triggers Android's package installer
+  const canShare = await Sharing.isAvailableAsync();
+  if (canShare) {
+    await Sharing.shareAsync(result.uri, {
+      mimeType: 'application/vnd.android.package-archive',
+      dialogTitle: '安装更新',
+    });
+  } else {
+    // Fallback: open the download URL in browser
+    Alert.alert(
+      '下载完成',
+      '无法自动安装，是否在浏览器中下载？',
+      [
+        { text: '取消' },
+        { text: '打开浏览器', onPress: () => Linking.openURL(url) },
+      ]
+    );
+  }
 }
