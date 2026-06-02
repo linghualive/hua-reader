@@ -11,6 +11,7 @@ import { generateArticleHtml } from '@/services/article-html';
 import { translateHtmlParagraphs } from '@/services/translate';
 import { relativeTime } from '@/utils/time';
 import { estimateReadingTime } from '@/utils/reading-time';
+import { ReaderSkeleton } from '@/components/Skeleton';
 import type { RootStackParamList } from '@/app/Navigation';
 
 type ReaderRoute = RouteProp<RootStackParamList, 'Reader'>;
@@ -271,13 +272,8 @@ export default function ReaderScreen() {
         />
       )}
 
-      {/* Loading state */}
-      {mode === 'loading' && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>正在获取全文...</Text>
-        </View>
-      )}
+      {/* Loading skeleton */}
+      {mode === 'loading' && <ReaderSkeleton />}
 
       {/* Reader mode: clean themed content */}
       {mode === 'reader' && readerHtml ? (
@@ -380,8 +376,6 @@ export default function ReaderScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   webView: { flex: 1, backgroundColor: 'transparent' },
-  loadingOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 14 },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
   barBtn: { padding: 8 },
