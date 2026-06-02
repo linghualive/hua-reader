@@ -85,7 +85,7 @@ async function syncSingleFeed(feed: Feed, instances: string[]): Promise<SyncResu
         content: item.content,
         url: item.url,
         image_url: item.imageUrl,
-        published_at: item.publishedAt ? new Date(item.publishedAt).toISOString() : new Date().toISOString(),
+        published_at: item.publishedAt || new Date().toISOString(),
       });
       if (id > 0) newArticles++;
     }

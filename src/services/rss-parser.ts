@@ -36,6 +36,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+function safeDate(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString();
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return new Date().toISOString();
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen) + '…';
@@ -91,7 +102,7 @@ function parseRssItems(items: unknown[]): ParsedItem[] {
       url: getText(item['link']),
       guid: getText(item['guid']) || getText(item['link']) || getText(item['title']),
       imageUrl: extractImageUrl(content || getText(item['description'])),
-      publishedAt: getText(item['pubDate']) || getText(item['dc:date']) || new Date().toISOString(),
+      publishedAt: safeDate(getText(item['pubDate']) || getText(item['dc:date'])),
     };
   });
 }
@@ -126,10 +137,7 @@ function parseAtomItems(entries: unknown[]): ParsedItem[] {
       url,
       guid: getText(entry['id']) || url || getText(entry['title']),
       imageUrl: extractImageUrl(content || getText(entry['summary'])),
-      publishedAt:
-        getText(entry['published']) ||
-        getText(entry['updated']) ||
-        new Date().toISOString(),
+      publishedAt: safeDate(getText(entry['published']) || getText(entry['updated'])),
     };
   });
 }
