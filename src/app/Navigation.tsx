@@ -35,15 +35,14 @@ export type DrawerParamList = { MainStack: undefined };
 const Drawer = createDrawerNavigator<DrawerParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-function CustomDrawerContent({ navigation }: DrawerContentComponentProps) {
+function CustomDrawerContent({ navigation, state }: DrawerContentComponentProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { current, setCurrent } = useTopicFilter();
   const [topics, setTopics] = useState<Topic[]>([]);
 
-  // Refresh topics every time drawer opens
-  const drawerState = state;
-  useEffect(() => { getAllTopics().then(setTopics); }, [drawerState]);
+  // Refresh topics every time drawer state changes (opens)
+  useEffect(() => { getAllTopics().then(setTopics); }, [state]);
 
   const goHome = useCallback((filter: TopicFilter) => {
     setCurrent(filter);
