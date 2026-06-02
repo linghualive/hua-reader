@@ -8,6 +8,7 @@ import { READING_BG_OPTIONS } from '@/theme/reading';
 import { getDatabase } from '@/db/database';
 import { cacheArticleContent, toggleBookmark, markAsRead, type ArticleWithFeed } from '@/db/articles';
 import { generateArticleHtml } from '@/services/article-html';
+import { translateHtmlParagraphs } from '@/services/translate';
 import { relativeTime } from '@/utils/time';
 import { estimateReadingTime } from '@/utils/reading-time';
 import type { RootStackParamList } from '@/app/Navigation';
@@ -105,6 +106,9 @@ export default function ReaderScreen() {
   const [readerHtml, setReaderHtml] = useState('');
   const [barsVisible, setBarsVisible] = useState(true);
   const [webLoading, setWebLoading] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [isTranslated, setIsTranslated] = useState(false);
+  const [originalContent, setOriginalContent] = useState('');
   const extractRef = useRef<WebView>(null);
   const extractTimeout = useRef<ReturnType<typeof setTimeout>>();
 
@@ -217,6 +221,28 @@ export default function ReaderScreen() {
     else if (mode === 'web' && readerHtml) setMode('reader');
   }, [mode, article, readerHtml]);
 
+  const handleTranslate = useCallback(async () => {
+    if (!article) return;
+    const content = article.content || article.summary || '';
+    if (!content.trim()) return;
+
+    if (isTranslated) {
+      // Revert to original
+      showReader(article, originalContent);
+      setIsTranslated(false);
+      return;
+    }
+
+    setOriginalContent(content);
+    setTranslating(true);
+    try {
+      const translated = await translateHtmlParagraphs(content);
+      showReader(article, translated);
+      setIsTranslated(true);
+    } catch {}
+    setTranslating(false);
+  }, [article, isTranslated, originalContent, showReader]);
+
   const isBookmarked = article?.is_bookmarked === 1;
   const canToggle = (mode === 'reader' && article?.url) || (mode === 'web' && readerHtml);
 
@@ -287,6 +313,19 @@ export default function ReaderScreen() {
             <Text style={[styles.titleText, { color: isDark ? '#e0e0e0' : colors.onSurface }]} numberOfLines={1}>
               {article?.feed_title || ''}
             </Text>
+            {mode === 'reader' && (
+              <Pressable onPress={handleTranslate} disabled={translating} hitSlop={12} style={styles.barBtn}>
+                {translating ? (
+                  <ActivityIndicator size={18} color={colors.primary} />
+                ) : (
+                  <MaterialCommunityIcons
+                    name="translate"
+                    size={22}
+                    color={isTranslated ? colors.primary : (isDark ? '#aaa' : colors.onSurfaceVariant)}
+                  />
+                )}
+              </Pressable>
+            )}
             {canToggle && (
               <Pressable onPress={toggleMode} hitSlop={12} style={styles.barBtn}>
                 <MaterialCommunityIcons
