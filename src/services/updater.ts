@@ -4,7 +4,11 @@ import Constants from 'expo-constants';
 import { Platform, Alert, Linking } from 'react-native';
 
 const GITHUB_REPO = 'linghualive/hua-reader';
-const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const RELEASES_APIS = [
+  `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+  `https://ghproxy.net/https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+  `https://gh-api.com/repos/${GITHUB_REPO}/releases/latest`,
+];
 
 export interface ReleaseInfo {
   version: string;
@@ -32,21 +36,27 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
   try {
     const currentVersion = getCurrentVersion();
     console.log('[Updater] Current version:', currentVersion);
-    console.log('[Updater] Fetching:', RELEASES_API);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    let response: Response;
-    try {
-      response = await fetch(RELEASES_API, {
-        headers: { 'Accept': 'application/vnd.github.v3+json' },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
+    let release: any = null;
+    for (const api of RELEASES_APIS) {
+      try {
+        console.log('[Updater] Trying:', api);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const response = await fetch(api, {
+          headers: { 'Accept': 'application/vnd.github.v3+json' },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (response.ok) {
+          release = await response.json();
+          console.log('[Updater] Success from:', api);
+          break;
+        }
+      } catch (e) {
+        console.log('[Updater] Failed:', api, e instanceof Error ? e.message : '');
+      }
     }
-    console.log('[Updater] API response status:', response.status);
-    if (!response.ok) return null;
-    const release = await response.json();
+    if (!release) return null;
     const tagVersion = (release.tag_name ?? '').replace(/^v/, '');
     console.log('[Updater] Latest release:', tagVersion, 'Current:', currentVersion);
     if (compareVersions(tagVersion, currentVersion) <= 0) return null;
