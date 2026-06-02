@@ -31,7 +31,7 @@ export default function SettingsScreen() {
   }, [rsshubUrl]);
 
   const handleCleanup = useCallback(async () => {
-    const deleted = await cleanupOldArticles(7);
+    const deleted = await cleanupOldArticles(30);
     Alert.alert('清理完成', `已清理 ${deleted} 篇旧文章`);
   }, []);
 
@@ -128,7 +128,7 @@ export default function SettingsScreen() {
         ]}
       >
         <Text style={[styles.cleanupText, { color: colors.onSurface }]}>
-          清理 7 天前的旧文章
+          清理 30 天前的旧文章
         </Text>
       </Pressable>
     </ScrollView>

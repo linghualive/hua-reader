@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { View, Pressable, Text, StyleSheet, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,7 +11,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
   interpolate,
 } from 'react-native-reanimated';
 import { useTheme } from '@/theme/ThemeContext';
@@ -48,45 +47,45 @@ function TabItem({
   routeName,
   onPress,
   primaryColor,
+  activeBgColor,
   mutedColor,
 }: {
   focused: boolean;
   routeName: string;
   onPress: () => void;
   primaryColor: string;
+  activeBgColor: string;
   mutedColor: string;
 }) {
   const config = TAB_CONFIG[routeName] ?? { label: routeName, icon: 'circle', iconFocused: 'circle' };
   const progress = useSharedValue(focused ? 1 : 0);
   const scale = useSharedValue(1);
 
-  useEffect(() => {
-    progress.value = withSpring(focused ? 1 : 0, {
-      damping: 15,
-      stiffness: 200,
-      mass: 0.8,
-    });
+  React.useEffect(() => {
+    progress.value = withSpring(focused ? 1 : 0, { damping: 15, stiffness: 200, mass: 0.8 });
   }, [focused]);
 
-  const containerStyle = useAnimatedStyle(() => ({
-    paddingHorizontal: interpolate(progress.value, [0, 1], [14, 20]),
-    backgroundColor: `rgba(${hexToRgb(primaryColor)}, ${interpolate(progress.value, [0, 1], [0, 0.12])})`,
-    transform: [{ scale: scale.value }],
-  }));
+  const containerStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      paddingHorizontal: interpolate(progress.value, [0, 1], [14, 20]),
+      opacity: interpolate(progress.value, [0, 0.5, 1], [1, 1, 1]),
+      transform: [{ scale: scale.value }],
+    };
+  });
 
-  const labelStyle = useAnimatedStyle(() => ({
-    width: interpolate(progress.value, [0, 1], [0, 36]),
-    opacity: progress.value,
-    marginLeft: interpolate(progress.value, [0, 1], [0, 6]),
-  }));
-
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(focused ? 0 : 0, { duration: 150 }),
-    transform: [{ scale: interpolate(progress.value, [0, 1], [1, 0]) }],
-  }));
+  const labelStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      width: interpolate(progress.value, [0, 1], [0, 36]),
+      opacity: progress.value,
+      marginLeft: interpolate(progress.value, [0, 1], [0, 6]),
+    };
+  });
 
   const handlePress = () => {
     scale.value = withSpring(0.9, { damping: 15, stiffness: 400 }, () => {
+      'worklet';
       scale.value = withSpring(1, { damping: 12, stiffness: 300 });
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -95,7 +94,13 @@ function TabItem({
 
   return (
     <Pressable onPress={handlePress}>
-      <Animated.View style={[styles.tabItem, containerStyle]}>
+      <Animated.View
+        style={[
+          styles.tabItem,
+          containerStyle,
+          focused && { backgroundColor: activeBgColor },
+        ]}
+      >
         <MaterialCommunityIcons
           name={(focused ? config.iconFocused : config.icon) as any}
           size={21}
@@ -115,6 +120,7 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const { colors, colorMode } = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = colorMode !== 'light';
+  const activeBg = colors.primary + '18';
 
   return (
     <View style={[styles.tabBarOuter, { bottom: Math.max(insets.bottom, 16) }]}>
@@ -136,6 +142,7 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
               focused={state.index === index}
               routeName={route.name}
               primaryColor={colors.primary}
+              activeBgColor={activeBg}
               mutedColor={colors.onSurfaceVariant}
               onPress={() => {
                 const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -170,17 +177,10 @@ const LazyBookmarks = React.lazy(() => import('@/screens/profile/BookmarksScreen
 const LazyFeedManager = React.lazy(() => import('@/screens/profile/FeedManagerScreen'));
 const LazySettings = React.lazy(() => import('@/screens/profile/SettingsScreen'));
 
-function ReaderScreenWrapper(props: any) {
-  return (<React.Suspense fallback={null}><LazyReader {...props} /></React.Suspense>);
-}
-function BookmarksScreenWrapper(props: any) {
-  return (<React.Suspense fallback={null}><LazyBookmarks {...props} /></React.Suspense>);
-}
-function FeedManagerScreenWrapper(props: any) {
-  return (<React.Suspense fallback={null}><LazyFeedManager {...props} /></React.Suspense>);
-}
-function SettingsScreenWrapper(props: any) {
-  return (<React.Suspense fallback={null}><LazySettings {...props} /></React.Suspense>);
+function wrap(Comp: React.LazyExoticComponent<any>) {
+  return function Wrapper(props: any) {
+    return (<React.Suspense fallback={null}><Comp {...props} /></React.Suspense>);
+  };
 }
 
 export function Navigation() {
@@ -195,21 +195,13 @@ export function Navigation() {
         }}
       >
         <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
-        <Stack.Screen name="Reader" component={ReaderScreenWrapper} options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="Bookmarks" component={BookmarksScreenWrapper} options={{ headerShown: true, title: '我的收藏' }} />
-        <Stack.Screen name="FeedManager" component={FeedManagerScreenWrapper} options={{ headerShown: true, title: '订阅源管理' }} />
-        <Stack.Screen name="Settings" component={SettingsScreenWrapper} options={{ headerShown: true, title: '设置' }} />
+        <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
+        <Stack.Screen name="FeedManager" component={wrap(LazyFeedManager)} options={{ headerShown: true, title: '订阅源管理' }} />
+        <Stack.Screen name="Settings" component={wrap(LazySettings)} options={{ headerShown: true, title: '设置' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
-}
-
-function hexToRgb(hex: string): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return `${r}, ${g}, ${b}`;
 }
 
 const styles = StyleSheet.create({
@@ -223,12 +215,7 @@ const styles = StyleSheet.create({
   tabBarShadow: {
     ...Platform.select({
       android: { elevation: 16 },
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 16,
-      },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 16 },
     }),
     borderRadius: 26,
   },

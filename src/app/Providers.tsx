@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { initDatabase } from '@/db/database';
 import { cleanupOldArticles } from '@/db/articles';
+import { syncAllFeeds } from '@/services/feed-sync';
 import { ThemeProvider } from '@/theme/ThemeContext';
 import { checkForUpdate, type ReleaseInfo } from '@/services/updater';
 import { UpdateDialog } from '@/components/UpdateDialog';
@@ -13,20 +14,19 @@ export function Providers({ children }: { children: ReactNode }) {
     (async () => {
       try {
         await initDatabase();
-        // Auto-cleanup articles older than 7 days on app start
-        await cleanupOldArticles(7);
+        await cleanupOldArticles(30);
       } catch (err) {
         console.error('DB init failed:', err);
       }
       setDbReady(true);
 
-      // Check for app updates after init (non-blocking)
-      try {
-        const release = await checkForUpdate();
+      // Auto-sync feeds on app start (non-blocking)
+      syncAllFeeds().catch(() => {});
+
+      // Check for app updates (non-blocking)
+      checkForUpdate().then((release) => {
         if (release) setUpdateInfo(release);
-      } catch {
-        // Silently ignore update check failures
-      }
+      }).catch(() => {});
     })();
   }, []);
 
