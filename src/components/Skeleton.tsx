@@ -62,23 +62,30 @@ export function TopicGridSkeleton() {
 export function ReaderSkeleton() {
   return (
     <View style={styles.reader}>
-      <SkeletonBlock width="85%" height={24} style={{ marginBottom: 10 }} />
-      <SkeletonBlock width="60%" height={24} style={{ marginBottom: 16 }} />
-      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
+      <SkeletonBlock width="85%" height={22} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="60%" height={22} style={{ marginBottom: 14 }} />
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
         <SkeletonBlock width={60} height={12} />
         <SkeletonBlock width={50} height={12} />
         <SkeletonBlock width={40} height={12} />
       </View>
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
-      <SkeletonBlock width="90%" height={14} style={{ marginBottom: 20 }} />
+      <SkeletonBlock width="92%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="78%" height={14} style={{ marginBottom: 18 }} />
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
-      <SkeletonBlock width="75%" height={14} style={{ marginBottom: 20 }} />
-      <SkeletonBlock width="100%" height={160} style={{ borderRadius: 10, marginBottom: 20 }} />
+      <SkeletonBlock width="85%" height={14} style={{ marginBottom: 18 }} />
+      <SkeletonBlock width="100%" height={140} style={{ borderRadius: 10, marginBottom: 18 }} />
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
       <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
-      <SkeletonBlock width="80%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="90%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="70%" height={14} style={{ marginBottom: 18 }} />
+      <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="100%" height={14} style={{ marginBottom: 10 }} />
+      <SkeletonBlock width="82%" height={14} style={{ marginBottom: 10 }} />
     </View>
   );
 }
@@ -88,5 +95,5 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16 },
   topicCard: { width: '30%', alignItems: 'center', paddingVertical: 14 },
-  reader: { paddingHorizontal: 20, paddingTop: 16 },
+  reader: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
 });
