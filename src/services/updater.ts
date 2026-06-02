@@ -32,9 +32,18 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
   try {
     const currentVersion = getCurrentVersion();
     console.log('[Updater] Current version:', currentVersion);
-    const response = await fetch(RELEASES_API, {
-      headers: { 'Accept': 'application/vnd.github.v3+json' },
-    });
+    console.log('[Updater] Fetching:', RELEASES_API);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      response = await fetch(RELEASES_API, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     console.log('[Updater] API response status:', response.status);
     if (!response.ok) return null;
     const release = await response.json();
@@ -49,7 +58,8 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
       releaseNotes: release.body ?? '',
       publishedAt: release.published_at ?? '',
     };
-  } catch {
+  } catch (err) {
+    console.log('[Updater] Error:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }

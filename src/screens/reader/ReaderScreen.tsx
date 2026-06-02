@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Pressable, StatusBar, ActivityIndicator, Alert, StyleSheet, Platform } from 'react-native';
+import { View, Text, Pressable, StatusBar, ActivityIndicator, Alert, Linking, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -95,6 +95,8 @@ const DARK_MODE_JS = `
 })(); true;
 `;
 
+const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
 export default function ReaderScreen() {
   const { colors, readingPrefs, colorMode } = useTheme();
   const navigation = useNavigation();
@@ -106,6 +108,7 @@ export default function ReaderScreen() {
   const [readerHtml, setReaderHtml] = useState('');
   const [barsVisible, setBarsVisible] = useState(true);
   const [webLoading, setWebLoading] = useState(false);
+  const [webError, setWebError] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [isTranslated, setIsTranslated] = useState(false);
   const [originalContent, setOriginalContent] = useState('');
@@ -258,6 +261,7 @@ export default function ReaderScreen() {
           ref={extractRef}
           source={{ uri: article.url }}
           style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
+          userAgent={MOBILE_UA}
           onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
           onMessage={handleExtractMessage}
           javaScriptEnabled
@@ -288,7 +292,7 @@ export default function ReaderScreen() {
       ) : null}
 
       {/* Web mode: original page with ad removal */}
-      {mode === 'web' && article?.url ? (
+      {mode === 'web' && article?.url && !webError ? (
         <WebView
           source={{ uri: article.url }}
           style={[styles.webView, { marginTop: statusBarHeight + 44 }]}
@@ -298,10 +302,26 @@ export default function ReaderScreen() {
           originWhitelist={['*']}
           mixedContentMode="compatibility"
           forceDarkOn={isDark}
+          userAgent={MOBILE_UA}
           injectedJavaScript={CLEAN_PAGE_JS + (isDark ? DARK_MODE_JS : '')}
-          onLoadStart={() => setWebLoading(true)}
+          onLoadStart={() => { setWebLoading(true); setWebError(false); }}
           onLoadEnd={() => setWebLoading(false)}
+          onError={() => { setWebError(true); setWebLoading(false); }}
+          onHttpError={(e) => { if (e.nativeEvent.statusCode >= 400) { setWebError(true); setWebLoading(false); } }}
         />
+      ) : null}
+
+      {mode === 'web' && webError && article?.url ? (
+        <View style={[styles.errorContainer, { marginTop: statusBarHeight + 44 }]}>
+          <MaterialCommunityIcons name="web-off" size={48} color={colors.onSurfaceVariant} />
+          <Text style={[styles.errorText, { color: colors.onSurfaceVariant }]}>页面加载失败</Text>
+          <Pressable onPress={() => setWebError(false)} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
+            <Text style={{ color: colors.onPrimary, fontWeight: '600' }}>重试</Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL(article.url)} style={[styles.browserBtn, { borderColor: colors.outline }]}>
+            <Text style={{ color: colors.onSurface }}>在浏览器打开</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {/* Top bar */}
@@ -367,4 +387,8 @@ const styles = StyleSheet.create({
   barBtn: { padding: 8 },
   titleText: { flex: 1, fontSize: 15, fontWeight: '500', marginHorizontal: 4 },
   webLoadingBar: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 15, paddingVertical: 4 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingHorizontal: 40 },
+  errorText: { fontSize: 16, fontWeight: '500' },
+  retryBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, marginTop: 8 },
+  browserBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, borderWidth: 1 },
 });
