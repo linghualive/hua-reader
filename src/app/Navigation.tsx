@@ -148,7 +148,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 6,
     borderRadius: 26,
-    borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
     ...Platform.select({
       android: { elevation: 12 },
