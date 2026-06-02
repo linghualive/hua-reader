@@ -91,6 +91,21 @@ export default function ReaderScreen() {
       } else if (row.url) {
         setMode('extracting');
         setLoading(true);
+        // 10s timeout: if extraction takes too long, show what we have
+        setTimeout(() => {
+          setLoading((loading) => {
+            if (loading) {
+              const fallback = content || row.summary || '';
+              if (fallback.replace(/<[^>]*>/g, '').trim().length > 20) {
+                renderArticle(row, fallback);
+              } else {
+                setMode('webview');
+              }
+              return false;
+            }
+            return loading;
+          });
+        }, 10000);
       } else {
         renderArticle(row, content || row.summary || '');
       }

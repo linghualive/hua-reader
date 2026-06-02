@@ -38,7 +38,7 @@ function buildFeedUrl(feed: Feed, baseUrl: string): string {
   return feed.url;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number = 10000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs: number = 6000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
