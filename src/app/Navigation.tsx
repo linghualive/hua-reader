@@ -1,11 +1,10 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet, Platform, Animated } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { createDrawerNavigator, type DrawerContentComponentProps } from '@react-navigation/drawer';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/theme/ThemeContext';
 
 import HomeScreen from '@/screens/home/HomeScreen';
@@ -21,89 +20,79 @@ export type RootStackParamList = {
   Settings: undefined;
 };
 
-export type TabParamList = {
-  HomeTab: undefined;
-  DiscoverTab: undefined;
-  ProfileTab: undefined;
+export type DrawerParamList = {
+  HomeDrawer: undefined;
+  DiscoverDrawer: undefined;
+  ProfileDrawer: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TabParamList>();
+const Drawer = createDrawerNavigator<DrawerParamList>();
 
-const TAB_CONFIG: Record<string, { label: string; icon: string; iconFocused: string }> = {
-  HomeTab: { label: '首页', icon: 'home-outline', iconFocused: 'home' },
-  DiscoverTab: { label: '发现', icon: 'compass-outline', iconFocused: 'compass' },
-  ProfileTab: { label: '我的', icon: 'account-outline', iconFocused: 'account' },
-};
+const DRAWER_ITEMS: { name: keyof DrawerParamList; label: string; icon: string; iconFocused: string }[] = [
+  { name: 'HomeDrawer', label: '首页', icon: 'home-outline', iconFocused: 'home' },
+  { name: 'DiscoverDrawer', label: '发现', icon: 'compass-outline', iconFocused: 'compass' },
+  { name: 'ProfileDrawer', label: '我的', icon: 'account-outline', iconFocused: 'account' },
+];
 
-function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+function CustomDrawerContent({ state, navigation }: DrawerContentComponentProps) {
   const { colors, colorMode } = useTheme();
   const insets = useSafeAreaInsets();
   const isDark = colorMode !== 'light';
 
   return (
-    <View style={[styles.tabBarOuter, { bottom: Math.max(insets.bottom, 16) }]}>
-      <View
-        style={[
-          styles.tabBarContainer,
-          {
-            backgroundColor: isDark ? 'rgba(28, 28, 30, 0.92)' : 'rgba(255, 255, 255, 0.92)',
-            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-          },
-        ]}
-      >
-        {state.routes.map((route, index) => {
-          const focused = state.index === index;
-          const config = TAB_CONFIG[route.name] ?? { label: route.name, icon: 'circle', iconFocused: 'circle' };
+    <View style={[styles.drawer, { backgroundColor: colors.surface, paddingTop: insets.top + 16 }]}>
+      <View style={styles.drawerHeader}>
+        <Text style={[styles.drawerTitle, { color: colors.onSurface }]}>华读</Text>
+        <Text style={[styles.drawerSubtitle, { color: colors.onSurfaceVariant }]}>打破认知边界</Text>
+      </View>
 
+      <View style={[styles.drawerDivider, { backgroundColor: colors.outline + '20' }]} />
+
+      <ScrollView style={styles.drawerMenu}>
+        {DRAWER_ITEMS.map((item, index) => {
+          const focused = state.index === index;
           return (
             <Pressable
-              key={route.key}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                if (state.index !== index && !event.defaultPrevented) {
-                  navigation.navigate(route.name);
-                }
-              }}
+              key={item.name}
+              onPress={() => navigation.navigate(item.name)}
               style={[
-                styles.tabItem,
-                focused && { backgroundColor: colors.primary + '15' },
+                styles.drawerItem,
+                focused && { backgroundColor: colors.primary + '12' },
               ]}
             >
               <MaterialCommunityIcons
-                name={(focused ? config.iconFocused : config.icon) as any}
-                size={21}
+                name={(focused ? item.iconFocused : item.icon) as any}
+                size={22}
                 color={focused ? colors.primary : colors.onSurfaceVariant}
               />
-              {focused && (
-                <Text style={[styles.tabLabel, { color: colors.primary }]}>
-                  {config.label}
-                </Text>
-              )}
+              <Text style={[styles.drawerItemText, { color: focused ? colors.primary : colors.onSurface }]}>
+                {item.label}
+              </Text>
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
-function TabNavigator() {
+function DrawerNavigator() {
+  const { colors } = useTheme();
   return (
-    <Tab.Navigator
-      tabBar={(props) => <FloatingTabBar {...props} />}
+    <Drawer.Navigator
+      drawerContent={(props) => <CustomDrawerContent {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { position: 'absolute', height: 0, overflow: 'hidden', borderTopWidth: 0, elevation: 0 },
-        tabBarShowLabel: false,
+        drawerType: 'front',
+        drawerStyle: { width: 260, backgroundColor: colors.surface },
+        overlayColor: 'rgba(0,0,0,0.4)',
       }}
-      sceneContainerStyle={{ backgroundColor: 'transparent' }}
     >
-      <Tab.Screen name="HomeTab" component={HomeScreen} />
-      <Tab.Screen name="DiscoverTab" component={DiscoverScreen} />
-      <Tab.Screen name="ProfileTab" component={ProfileScreen} />
-    </Tab.Navigator>
+      <Drawer.Screen name="HomeDrawer" component={HomeScreen} />
+      <Drawer.Screen name="DiscoverDrawer" component={DiscoverScreen} />
+      <Drawer.Screen name="ProfileDrawer" component={ProfileScreen} />
+    </Drawer.Navigator>
   );
 }
 
@@ -130,7 +119,7 @@ export function Navigation() {
           headerTitleStyle: { fontWeight: '600' },
         }}
       >
-        <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
+        <Stack.Screen name="Main" component={DrawerNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
         <Stack.Screen name="RecentlyRead" component={wrap(LazyRecentlyRead)} options={{ headerShown: true, title: '最近阅读' }} />
@@ -142,36 +131,12 @@ export function Navigation() {
 }
 
 const styles = StyleSheet.create({
-  tabBarOuter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    pointerEvents: 'box-none',
-  },
-  tabBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 26,
-    gap: 4,
-    ...Platform.select({
-      android: { elevation: 12 },
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12 },
-    }),
-  },
-  tabItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 6,
-  },
-  tabLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  drawer: { flex: 1, paddingHorizontal: 12 },
+  drawerHeader: { paddingHorizontal: 16, paddingBottom: 16 },
+  drawerTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  drawerSubtitle: { fontSize: 13, marginTop: 4 },
+  drawerDivider: { height: StyleSheet.hairlineWidth, marginBottom: 8 },
+  drawerMenu: { flex: 1 },
+  drawerItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12, marginBottom: 2 },
+  drawerItemText: { fontSize: 15, fontWeight: '500' },
 });
