@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useTheme } from '@/theme/ThemeContext';
 import { getAllFeeds } from '@/db/feeds';
+import { syncAllFeeds } from '@/services/feed-sync';
 import { SwipeMode } from './SwipeMode';
 import { ListMode } from './ListMode';
 import { EmptyState } from '@/components/EmptyState';
@@ -19,16 +20,19 @@ export default function HomeScreen() {
   const tabNavigation = useNavigation<TabNavProp>();
   const [viewMode, setViewMode] = useState<ViewMode>('swipe');
   const [hasFeeds, setHasFeeds] = useState<boolean | null>(null);
-
-  const checkFeeds = useCallback(async () => {
-    const feeds = await getAllFeeds();
-    setHasFeeds(feeds.length > 0);
-  }, []);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
-      checkFeeds();
-    }, [checkFeeds]),
+      (async () => {
+        const feeds = await getAllFeeds();
+        setHasFeeds(feeds.length > 0);
+        if (feeds.length > 0) {
+          await syncAllFeeds();
+          setRefreshKey((k) => k + 1);
+        }
+      })();
+    }, []),
   );
 
   const toggleMode = useCallback(() => {
@@ -39,10 +43,8 @@ export default function HomeScreen() {
     tabNavigation.navigate('DiscoverTab');
   }, [tabNavigation]);
 
-  // Still loading
   if (hasFeeds === null) return null;
 
-  // First-run: no feeds
   if (!hasFeeds) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -69,29 +71,17 @@ export default function HomeScreen() {
         </Pressable>
       </View>
       {viewMode === 'swipe' ? (
-        <SwipeMode onNavigateDiscover={navigateDiscover} />
+        <SwipeMode key={`swipe-${refreshKey}`} onNavigateDiscover={navigateDiscover} />
       ) : (
-        <ListMode />
+        <ListMode key={`list-${refreshKey}`} />
       )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  headerSpacer: {
-    flex: 1,
-  },
-  toggleButton: {
-    padding: 4,
-  },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 16, paddingVertical: 8 },
+  headerSpacer: { flex: 1 },
+  toggleButton: { padding: 4 },
 });
