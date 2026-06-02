@@ -1,14 +1,22 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
 import { initDatabase } from '@/db/database';
+import { cleanupOldArticles } from '@/db/articles';
 import { ThemeProvider } from '@/theme/ThemeContext';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
-    initDatabase()
-      .then(() => setDbReady(true))
-      .catch((err) => console.error('DB init failed:', err));
+    (async () => {
+      try {
+        await initDatabase();
+        // Auto-cleanup articles older than 7 days on app start
+        await cleanupOldArticles(7);
+      } catch (err) {
+        console.error('DB init failed:', err);
+      }
+      setDbReady(true);
+    })();
   }, []);
 
   if (!dbReady) return null;
