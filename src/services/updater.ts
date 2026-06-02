@@ -76,11 +76,11 @@ export async function checkForUpdate(): Promise<ReleaseInfo | null> {
 }
 
 export async function downloadAndInstallApk(url: string): Promise<void> {
-  // Try multiple download mirrors
+  // Try self-hosted first, then GitHub mirrors
   const mirrors = [
+    'http://linghua.icu:8081/hua-reader-latest.apk',
     url,
     url.replace('github.com', 'ghproxy.net/https://github.com'),
-    `https://gh-proxy.com/${url}`,
   ];
 
   for (const mirror of mirrors) {
