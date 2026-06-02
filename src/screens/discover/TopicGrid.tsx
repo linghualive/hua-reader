@@ -5,43 +5,44 @@ import { useTheme } from '@/theme/ThemeContext';
 import type { BuiltInTopic } from '@/services/built-in-topics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_GAP = 12;
-const CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - CARD_GAP) / 2;
+const CARD_GAP = 10;
+const CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - CARD_GAP * 2) / 3;
 
 interface TopicCardProps {
   topic: BuiltInTopic;
-  feedCount: number;
   isSubscribed: boolean;
   onPress: () => void;
 }
 
-function TopicCard({ topic, feedCount, isSubscribed, onPress }: TopicCardProps) {
+function TopicCard({ topic, isSubscribed, onPress }: TopicCardProps) {
   const { colors } = useTheme();
 
   return (
     <Pressable
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         styles.card,
         {
-          backgroundColor: colors.cardBackground,
-          borderColor: isSubscribed ? colors.primary + '60' : colors.outline + '30',
-          width: CARD_WIDTH,
+          backgroundColor: isSubscribed ? colors.primary + '12' : colors.cardBackground,
+          borderColor: isSubscribed ? colors.primary + '40' : colors.outline + '25',
         },
+        pressed && { opacity: 0.7 },
       ]}
     >
-      <MaterialCommunityIcons
-        name={topic.icon as any}
-        size={28}
-        color={isSubscribed ? colors.primary : colors.onSurfaceVariant}
-      />
-      <Text style={[styles.name, { color: colors.onSurface }]}>{topic.name}</Text>
+      <View style={[styles.iconWrap, { backgroundColor: isSubscribed ? colors.primary + '20' : colors.surfaceVariant }]}>
+        <MaterialCommunityIcons
+          name={topic.icon as any}
+          size={22}
+          color={isSubscribed ? colors.primary : colors.onSurfaceVariant}
+        />
+      </View>
+      <Text style={[styles.name, { color: colors.onSurface }]} numberOfLines={1}>{topic.name}</Text>
       <Text style={[styles.count, { color: colors.onSurfaceVariant }]}>
-        {feedCount} 个源
+        {topic.feeds.length} 源
       </Text>
       {isSubscribed && (
-        <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
-          <Text style={[styles.badgeText, { color: colors.primary }]}>已订阅</Text>
+        <View style={[styles.checkMark, { backgroundColor: colors.primary }]}>
+          <MaterialCommunityIcons name="check" size={10} color={colors.onPrimary} />
         </View>
       )}
     </Pressable>
@@ -61,7 +62,6 @@ export function TopicGrid({ topics, subscribedTopicNames, onTopicPress }: TopicG
         <TopicCard
           key={topic.name}
           topic={topic}
-          feedCount={topic.feeds.length}
           isSubscribed={subscribedTopicNames.has(topic.name)}
           onPress={() => onTopicPress(topic)}
         />
@@ -78,28 +78,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   card: {
-    padding: 16,
-    borderRadius: 16,
+    width: CARD_WIDTH,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 4,
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   name: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    marginTop: 8,
   },
   count: {
-    fontSize: 12,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  badgeText: {
     fontSize: 11,
-    fontWeight: '500',
+  },
+  checkMark: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

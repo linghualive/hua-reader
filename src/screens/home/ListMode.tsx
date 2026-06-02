@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, RefreshControl, StyleSheet } from 'react-native';
+import PagerView from 'react-native-pager-view';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,122 +14,148 @@ import type { RootStackParamList } from '@/app/Navigation';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
+interface TabPage {
+  id: number | undefined;
+  name: string;
+}
+
 export function ListMode() {
   const { colors } = useTheme();
   const navigation = useNavigation<NavProp>();
-  const [articles, setArticles] = useState<ArticleWithFeed[]>([]);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedTopicId, setSelectedTopicId] = useState<number | undefined>(undefined);
+  const [tabs, setTabs] = useState<TabPage[]>([{ id: undefined, name: '全部' }]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [articlesByTab, setArticlesByTab] = useState<Map<number | undefined, ArticleWithFeed[]>>(new Map());
   const [refreshing, setRefreshing] = useState(false);
+  const pagerRef = useRef<PagerView>(null);
+  const tabScrollRef = useRef<ScrollView>(null);
 
-  const loadData = useCallback(async () => {
-    const [topicList, articleList] = await Promise.all([
-      getAllTopics(),
-      getUnreadArticles(selectedTopicId),
-    ]);
-    setTopics(topicList);
-    setArticles(articleList);
-  }, [selectedTopicId]);
+  const loadTopics = useCallback(async () => {
+    const topicList = await getAllTopics();
+    const newTabs: TabPage[] = [{ id: undefined, name: '全部' }];
+    topicList.forEach((t) => newTabs.push({ id: t.id, name: t.name }));
+    setTabs(newTabs);
+  }, []);
+
+  const loadArticlesForTab = useCallback(async (topicId: number | undefined) => {
+    const articles = await getUnreadArticles(topicId);
+    setArticlesByTab((prev) => new Map(prev).set(topicId, articles));
+  }, []);
+
+  const loadAllArticles = useCallback(async () => {
+    const topicList = await getAllTopics();
+    const allTabs: TabPage[] = [{ id: undefined, name: '全部' }];
+    topicList.forEach((t) => allTabs.push({ id: t.id, name: t.name }));
+    setTabs(allTabs);
+    for (const tab of allTabs) {
+      const articles = await getUnreadArticles(tab.id);
+      setArticlesByTab((prev) => new Map(prev).set(tab.id, articles));
+    }
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadAllArticles();
+  }, [loadAllArticles]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await syncAllFeeds();
-      await loadData();
-    } catch {
-      // ignore
-    }
+      await loadAllArticles();
+    } catch {}
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadAllArticles]);
 
-  const selectTopic = useCallback((topicId: number | undefined) => {
-    setSelectedTopicId(topicId);
+  const onTabPress = useCallback((index: number) => {
+    setSelectedIndex(index);
+    pagerRef.current?.setPage(index);
   }, []);
+
+  const onPageSelected = useCallback((e: any) => {
+    const index = e.nativeEvent.position;
+    setSelectedIndex(index);
+  }, []);
+
+  useEffect(() => {
+    if (tabScrollRef.current && selectedIndex > 0) {
+      tabScrollRef.current.scrollTo({ x: Math.max(0, selectedIndex * 70 - 40), animated: true });
+    }
+  }, [selectedIndex]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
+        ref={tabScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={[styles.tabBar, { backgroundColor: colors.surface }]}
+        style={[styles.tabBar, { backgroundColor: colors.surface, borderBottomColor: colors.outline + '30' }]}
         contentContainerStyle={styles.tabBarContent}
       >
-        <Pressable
-          onPress={() => selectTopic(undefined)}
-          style={[
-            styles.tab,
-            {
-              backgroundColor: selectedTopicId === undefined ? colors.primary : 'transparent',
-              borderColor: colors.outline,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              {
-                color: selectedTopicId === undefined ? colors.onPrimary : colors.onSurfaceVariant,
-              },
-            ]}
-          >
-            全部
-          </Text>
-        </Pressable>
-        {topics.map((topic) => (
-          <Pressable
-            key={topic.id}
-            onPress={() => selectTopic(topic.id)}
-            style={[
-              styles.tab,
-              {
-                backgroundColor: selectedTopicId === topic.id ? colors.primary : 'transparent',
-                borderColor: colors.outline,
-              },
-            ]}
-          >
-            <Text
+        {tabs.map((tab, index) => {
+          const active = index === selectedIndex;
+          return (
+            <Pressable
+              key={tab.name}
+              onPress={() => onTabPress(index)}
               style={[
-                styles.tabText,
-                {
-                  color: selectedTopicId === topic.id ? colors.onPrimary : colors.onSurfaceVariant,
-                },
+                styles.tab,
+                active
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: 'transparent', borderColor: colors.outline + '50' },
               ]}
             >
-              {topic.name}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: active ? colors.onPrimary : colors.onSurfaceVariant },
+                  active && { fontWeight: '600' },
+                ]}
+              >
+                {tab.name}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
-      {articles.length === 0 ? (
-        <EmptyState
-          icon="newspaper-variant-outline"
-          message="暂无文章，下拉刷新试试"
-        />
-      ) : (
-        <FlashList
-          data={articles}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <ArticleCard
-              article={item}
-              onPress={() => navigation.navigate('Reader', { articleId: item.id })}
-            />
-          )}
-          estimatedItemSize={100}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        />
-      )}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={0}
+        onPageSelected={onPageSelected}
+      >
+        {tabs.map((tab) => {
+          const articles = articlesByTab.get(tab.id) ?? [];
+          return (
+            <View key={tab.name} style={{ flex: 1 }}>
+              {articles.length === 0 ? (
+                <EmptyState
+                  icon="newspaper-variant-outline"
+                  message="暂无文章，下拉刷新试试"
+                />
+              ) : (
+                <FlashList
+                  data={articles}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <ArticleCard
+                      article={item}
+                      onPress={() => navigation.navigate('Reader', { articleId: item.id })}
+                    />
+                  )}
+                  estimatedItemSize={100}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={onRefresh}
+                      tintColor={colors.primary}
+                    />
+                  }
+                />
+              )}
+            </View>
+          );
+        })}
+      </PagerView>
     </View>
   );
 }
@@ -138,7 +165,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabBar: {
-    maxHeight: 48,
+    maxHeight: 50,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   tabBarContent: {
     paddingHorizontal: 12,
@@ -147,13 +175,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tab: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderWidth: 1,
   },
   tabText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  pager: {
+    flex: 1,
   },
 });
