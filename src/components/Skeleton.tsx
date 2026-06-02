@@ -88,5 +88,5 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16 },
   topicCard: { width: '30%', alignItems: 'center', paddingVertical: 14 },
-  reader: { paddingHorizontal: 20, paddingTop: 100 },
+  reader: { paddingHorizontal: 20, paddingTop: 16 },
 });
