@@ -14,6 +14,7 @@ export interface Article {
   is_read: number;
   is_bookmarked: number;
   bookmarked_at: string | null;
+  read_at: string | null;
 }
 
 export interface ArticleWithFeed extends Article {
@@ -118,7 +119,19 @@ export async function insertArticle(article: {
 
 export async function markAsRead(id: number): Promise<void> {
   const db = getDatabase();
-  await db.runAsync('UPDATE articles SET is_read = 1 WHERE id = ?', [id]);
+  await db.runAsync("UPDATE articles SET is_read = 1, read_at = datetime('now') WHERE id = ?", [id]);
+}
+
+export async function getRecentlyRead(limit: number = 50): Promise<ArticleWithFeed[]> {
+  const db = getDatabase();
+  return db.getAllAsync<ArticleWithFeed>(
+    `SELECT a.*, f.title AS feed_title, f.icon_url AS feed_icon_url
+     FROM articles a JOIN feeds f ON a.feed_id = f.id
+     WHERE a.is_read = 1 AND a.read_at IS NOT NULL
+     ORDER BY a.read_at DESC
+     LIMIT ?`,
+    [limit],
+  );
 }
 
 export async function toggleBookmark(id: number): Promise<void> {

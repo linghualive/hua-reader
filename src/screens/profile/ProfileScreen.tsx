@@ -76,6 +76,11 @@ export default function ProfileScreen() {
             onPress={() => navigation.navigate('Bookmarks')}
           />
           <MenuItem
+            icon="history"
+            label="最近阅读"
+            onPress={() => navigation.navigate('RecentlyRead')}
+          />
+          <MenuItem
             icon="rss"
             label="订阅源管理"
             onPress={() => navigation.navigate('FeedManager')}

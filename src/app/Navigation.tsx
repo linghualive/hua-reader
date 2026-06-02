@@ -16,6 +16,7 @@ export type RootStackParamList = {
   Main: undefined;
   Reader: { articleId: number };
   Bookmarks: undefined;
+  RecentlyRead: undefined;
   FeedManager: undefined;
   Settings: undefined;
 };
@@ -108,6 +109,7 @@ function TabNavigator() {
 
 const LazyReader = React.lazy(() => import('@/screens/reader/ReaderScreen'));
 const LazyBookmarks = React.lazy(() => import('@/screens/profile/BookmarksScreen'));
+const LazyRecentlyRead = React.lazy(() => import('@/screens/profile/RecentScreen'));
 const LazyFeedManager = React.lazy(() => import('@/screens/profile/FeedManagerScreen'));
 const LazySettings = React.lazy(() => import('@/screens/profile/SettingsScreen'));
 
@@ -131,6 +133,7 @@ export function Navigation() {
         <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
         <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
+        <Stack.Screen name="RecentlyRead" component={wrap(LazyRecentlyRead)} options={{ headerShown: true, title: '最近阅读' }} />
         <Stack.Screen name="FeedManager" component={wrap(LazyFeedManager)} options={{ headerShown: true, title: '订阅源管理' }} />
         <Stack.Screen name="Settings" component={wrap(LazySettings)} options={{ headerShown: true, title: '设置' }} />
       </Stack.Navigator>

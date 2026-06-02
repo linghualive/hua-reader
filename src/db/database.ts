@@ -59,4 +59,14 @@ export async function initDatabase(name: string = 'hua-reader.db'): Promise<void
     CREATE INDEX IF NOT EXISTS idx_articles_bookmarked ON articles(is_bookmarked);
     CREATE INDEX IF NOT EXISTS idx_feeds_topic ON feeds(topic_id);
   `);
+
+  // Migration: add read_at column
+  try {
+    await db.execAsync(`ALTER TABLE articles ADD COLUMN read_at TEXT`);
+  } catch {
+    // Column already exists
+  }
+  try {
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_articles_read_at ON articles(read_at DESC)`);
+  } catch {}
 }
