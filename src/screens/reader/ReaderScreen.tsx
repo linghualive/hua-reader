@@ -131,18 +131,14 @@ export default function ReaderScreen() {
       setArticle(row);
       await markAsRead(row.id);
 
-      const content = row.content || '';
-      const plain = content.replace(/<[^>]*>/g, '').trim();
-      if (plain.length > 200) {
+      const content = row.content || row.summary || '';
+      if (content.trim()) {
         setReaderHtml(buildReaderHtml(row, content));
         setMode('reader');
       } else if (row.url) {
-        setMode('loading');
-        setTimeout(() => {
-          setMode((m) => m === 'loading' ? 'web' : m);
-        }, 12000);
+        setMode('web');
       } else {
-        setReaderHtml(buildReaderHtml(row, content || row.summary || ''));
+        setReaderHtml(buildReaderHtml(row, '暂无内容'));
         setMode('reader');
       }
     })();
@@ -199,29 +195,6 @@ export default function ReaderScreen() {
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
-
-      {/* Hidden extract WebView */}
-      {mode === 'loading' && article?.url && (
-        <WebView
-          ref={extractRef}
-          source={{ uri: article.url }}
-          style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
-          onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
-          onMessage={handleExtractMessage}
-          javaScriptEnabled
-          originWhitelist={['*']}
-          onError={() => setMode('web')}
-          onHttpError={() => setMode('web')}
-        />
-      )}
-
-      {/* Loading */}
-      {mode === 'loading' && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>正在提取文章...</Text>
-        </View>
-      )}
 
       {/* Reader mode */}
       {mode === 'reader' && readerHtml ? (
