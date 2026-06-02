@@ -98,6 +98,10 @@ export default function DiscoverScreen() {
   const handleExportOpml = useCallback(async () => {
     try {
       const feeds = await getAllFeeds();
+      if (feeds.length === 0) {
+        Alert.alert('无数据', '你还没有订阅任何源');
+        return;
+      }
       const topicMap = new Map<string, { title: string; xmlUrl: string }[]>();
       for (const feed of feeds) {
         const name = feed.topic_name || '未分类';
@@ -106,9 +110,9 @@ export default function DiscoverScreen() {
         topicMap.set(name, list);
       }
       const categories: OpmlCategory[] = Array.from(topicMap.entries()).map(([name, feeds]) => ({ name, feeds }));
-      const filePath = `${FileSystem.cacheDirectory}hua-reader-feeds.opml`;
-      await FileSystem.writeAsStringAsync(filePath, generateOpml(categories));
-      await Sharing.shareAsync(filePath, { mimeType: 'text/xml' });
+      const filePath = `${FileSystem.documentDirectory}hua-reader-feeds.opml`;
+      await FileSystem.writeAsStringAsync(filePath, generateOpml(categories), { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(filePath, { mimeType: 'text/xml', dialogTitle: '导出订阅源' });
     } catch (err) { Alert.alert('导出失败', err instanceof Error ? err.message : '未知错误'); }
   }, []);
 
