@@ -18,7 +18,7 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     getSetting('rsshub_url').then((url) => {
-      if (url) setRsshubUrl(url);
+      setRsshubUrl(url || 'http://linghua.icu:1200');
     });
   }, []);
 
