@@ -132,13 +132,7 @@ export default function DiscoverScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.onSurface }]}>发现</Text>
-          <Text style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>
-            选择感兴趣的话题，打破认知边界
-          </Text>
-        </View>
+        <View style={styles.header} />
 
         {/* Quick subscribe all */}
         {subscribedCount < totalCount && (
