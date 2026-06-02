@@ -14,7 +14,7 @@ export interface ReleaseInfo {
 }
 
 export function getCurrentVersion(): string {
-  return Constants.expoConfig?.version ?? '0.0.0';
+  return Constants.expoConfig?.version ?? Constants.manifest?.version ?? '0.0.0';
 }
 
 function compareVersions(a: string, b: string): number {
@@ -30,13 +30,16 @@ function compareVersions(a: string, b: string): number {
 export async function checkForUpdate(): Promise<ReleaseInfo | null> {
   if (Platform.OS !== 'android') return null;
   try {
+    const currentVersion = getCurrentVersion();
+    console.log('[Updater] Current version:', currentVersion);
     const response = await fetch(RELEASES_API, {
       headers: { 'Accept': 'application/vnd.github.v3+json' },
     });
+    console.log('[Updater] API response status:', response.status);
     if (!response.ok) return null;
     const release = await response.json();
     const tagVersion = (release.tag_name ?? '').replace(/^v/, '');
-    const currentVersion = getCurrentVersion();
+    console.log('[Updater] Latest release:', tagVersion, 'Current:', currentVersion);
     if (compareVersions(tagVersion, currentVersion) <= 0) return null;
     const apkAsset = release.assets?.find((a: any) => a.name?.endsWith('.apk'));
     if (!apkAsset) return null;
