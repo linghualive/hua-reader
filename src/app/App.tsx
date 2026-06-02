@@ -1,14 +1,25 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Providers } from './Providers';
+import { Navigation } from './Navigation';
+import { useTheme } from '@/theme/ThemeContext';
 
-export default function App() {
+function AppContent() {
+  const { colorMode } = useTheme();
+  const barStyle = colorMode === 'light' ? 'dark' : 'light';
+
   return (
-    <View style={styles.container}>
-      <Text>Hua Reader</Text>
-    </View>
+    <>
+      <StatusBar style={barStyle} />
+      <Navigation />
+    </>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-});
+export default function App() {
+  return (
+    <Providers>
+      <AppContent />
+    </Providers>
+  );
+}
