@@ -32,7 +32,7 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
       line-height: ${opts.lineHeight};
       color: ${opts.textColor};
       background-color: ${opts.backgroundColor};
-      padding: 20px 16px 60px;
+      padding: 80px 16px 120px;
       -webkit-text-size-adjust: 100%;
       word-wrap: break-word;
       overflow-wrap: break-word;
