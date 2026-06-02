@@ -286,24 +286,26 @@ export default function ReaderScreen() {
         </View>
       </View>
 
-      {/* Hidden WebView for on-demand content extraction */}
-      {mode === 'loading' && article?.url && (
-        <WebView
-          ref={extractRef}
-          source={{ uri: article.url }}
-          style={{ height: 0, width: 0, position: 'absolute', opacity: 0 }}
-          userAgent={MOBILE_UA}
-          onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
-          onMessage={handleExtractMessage}
-          javaScriptEnabled
-          originWhitelist={['*']}
-          onError={() => setMode('web')}
-          onHttpError={() => setMode('web')}
-        />
-      )}
-
       {/* Loading skeleton */}
-      {mode === 'loading' && <ReaderSkeleton />}
+      {mode === 'loading' && (
+        <>
+          <ReaderSkeleton />
+          {article?.url && (
+            <WebView
+              ref={extractRef}
+              source={{ uri: article.url }}
+              style={{ height: 0, width: 0, position: 'absolute', top: -9999 }}
+              userAgent={MOBILE_UA}
+              onLoadEnd={() => extractRef.current?.injectJavaScript(EXTRACT_JS)}
+              onMessage={handleExtractMessage}
+              javaScriptEnabled
+              originWhitelist={['*']}
+              onError={() => setMode('web')}
+              onHttpError={() => setMode('web')}
+            />
+          )}
+        </>
+      )}
 
       {/* Reader mode: clean themed content */}
       {mode === 'reader' && readerHtml ? (
