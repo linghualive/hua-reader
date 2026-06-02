@@ -54,8 +54,8 @@ export default function HomeScreen() {
     setArticlesByTopic((prev) => new Map(prev).set(topicId, articles));
   }, []);
 
-  const syncTopic = useCallback(async (topicId: number, force: boolean = false) => {
-    if (!force && syncedTopics.current.has(topicId)) return;
+  const syncTopic = useCallback(async (topicId: number) => {
+    if (syncedTopics.current.has(topicId)) return;
     setSyncingTopicId(topicId);
     try {
       await syncFeedsByTopic(topicId);
@@ -65,8 +65,23 @@ export default function HomeScreen() {
     setSyncingTopicId(null);
   }, [loadArticlesForTopic]);
 
+  const syncAllInBackground = useCallback(async (topicList: Topic[]) => {
+    for (const t of topicList) {
+      if (!syncedTopics.current.has(t.id)) {
+        setSyncingTopicId(t.id);
+        try {
+          await syncFeedsByTopic(t.id);
+          syncedTopics.current.add(t.id);
+        } catch {}
+        await loadArticlesForTopic(t.id);
+        setSyncingTopicId(null);
+      }
+    }
+  }, [loadArticlesForTopic]);
+
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
       (async () => {
         const feeds = await getAllFeeds();
         setHasFeeds(feeds.length > 0);
@@ -74,29 +89,26 @@ export default function HomeScreen() {
           const topicList = await getAllTopics();
           setTopics(topicList);
           if (topicList.length > 0) {
-            // Load existing articles for all topics
             for (const t of topicList) {
               await loadArticlesForTopic(t.id);
             }
-            // Sync first topic
-            syncTopic(topicList[0].id);
+            if (!cancelled) syncAllInBackground(topicList);
           }
         }
       })();
+      return () => { cancelled = true; };
     }, []),
   );
 
   const onTabPress = useCallback((index: number) => {
     setSelectedIndex(index);
     pagerRef.current?.setPage(index);
-    if (topics[index]) syncTopic(topics[index].id);
-  }, [topics, syncTopic]);
+  }, []);
 
   const onPageSelected = useCallback((e: any) => {
     const index = e.nativeEvent.position;
     setSelectedIndex(index);
-    if (topics[index]) syncTopic(topics[index].id);
-  }, [topics, syncTopic]);
+  }, []);
 
   useEffect(() => {
     const layout = tabLayouts.current.get(selectedIndex);
@@ -109,10 +121,17 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     if (!topics[selectedIndex]) return;
     setRefreshing(true);
-    syncedTopics.current.delete(topics[selectedIndex].id);
-    await syncTopic(topics[selectedIndex].id, true);
+    const topicId = topics[selectedIndex].id;
+    syncedTopics.current.delete(topicId);
+    setSyncingTopicId(topicId);
+    try {
+      await syncFeedsByTopic(topicId);
+      syncedTopics.current.add(topicId);
+    } catch {}
+    await loadArticlesForTopic(topicId);
+    setSyncingTopicId(null);
     setRefreshing(false);
-  }, [topics, selectedIndex, syncTopic]);
+  }, [topics, selectedIndex, loadArticlesForTopic]);
 
   const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
     await markAsRead(article.id);
