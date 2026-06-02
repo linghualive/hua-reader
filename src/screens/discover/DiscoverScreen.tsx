@@ -59,7 +59,7 @@ export default function DiscoverScreen() {
     const topics = await getAllTopics();
     let existing = topics.find((t) => t.name === feed.topicName);
     const topicId = existing ? existing.id : await insertTopic(feed.topicName, feed.topicIcon, true);
-    await insertFeed(feed.title, feed.route, topicId, feed.type || 'rsshub');
+    await insertFeed(feed.title, feed.route, topicId, 'rsshub');
     loadSubscribed();
   }, [loadSubscribed]);
 
@@ -98,10 +98,7 @@ export default function DiscoverScreen() {
   const handleExportOpml = useCallback(async () => {
     try {
       const feeds = await getAllFeeds();
-      if (feeds.length === 0) {
-        Alert.alert('无数据', '你还没有订阅任何源');
-        return;
-      }
+      if (feeds.length === 0) { Alert.alert('无数据', '你还没有订阅任何源'); return; }
       const topicMap = new Map<string, { title: string; xmlUrl: string }[]>();
       for (const feed of feeds) {
         const name = feed.topic_name || '未分类';
@@ -117,59 +114,54 @@ export default function DiscoverScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Search bar - always visible */}
-      <View style={[styles.searchBar, { backgroundColor: colors.surface, borderBottomColor: colors.outline + '20' }]}>
-        <View style={[styles.searchInput, { backgroundColor: colors.surfaceVariant }]}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceVariant} />
-          <TextInput
-            style={[styles.searchText, { color: colors.onSurface }]}
-            placeholder="搜索源..."
-            placeholderTextColor={colors.onSurfaceVariant}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')}>
-              <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceVariant} />
-            </Pressable>
-          )}
-        </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+      {/* Search */}
+      <View style={[styles.searchWrap, { backgroundColor: colors.surfaceVariant, borderColor: colors.outline + '20' }]}>
+        <MaterialCommunityIcons name="magnify" size={20} color={colors.onSurfaceVariant} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.onSurface }]}
+          placeholder="搜索 3000+ 源..."
+          placeholderTextColor={colors.onSurfaceVariant}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={() => setSearchQuery('')}>
+            <MaterialCommunityIcons name="close-circle" size={18} color={colors.onSurfaceVariant} />
+          </Pressable>
+        )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {isSearching ? (
-          /* Search results */
           <SearchFeeds query={searchQuery} subscribedRoutes={subscribedRoutes} onAddFeed={handleSearchAddFeed} />
         ) : (
-          /* Default view */
           <>
             {/* Quick subscribe */}
             {subscribedTopicNames.size < BUILT_IN_TOPICS.length && (
               <Pressable onPress={handleSubscribeAll} style={[styles.quickBtn, { backgroundColor: colors.primary }]}>
-                <MaterialCommunityIcons name="lightning-bolt" size={16} color={colors.onPrimary} />
-                <Text style={[styles.quickBtnText, { color: colors.onPrimary }]}>一键订阅全部话题</Text>
+                <MaterialCommunityIcons name="lightning-bolt" size={18} color={colors.onPrimary} />
+                <Text style={[styles.quickBtnText, { color: colors.onPrimary }]}>一键订阅全部 {BUILT_IN_TOPICS.length} 个话题</Text>
               </Pressable>
             )}
 
-            {/* Topics */}
+            {/* Section: Topics */}
             <View style={styles.sectionRow}>
-              <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>话题</Text>
-              <Pressable onPress={() => setCreateTopicVisible(true)} style={[styles.newBtn, { borderColor: colors.primary }]}>
-                <MaterialCommunityIcons name="plus" size={13} color={colors.primary} />
-                <Text style={[styles.newBtnText, { color: colors.primary }]}>新建</Text>
+              <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>推荐话题</Text>
+              <Pressable onPress={() => setCreateTopicVisible(true)} style={styles.sectionAction}>
+                <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
+                <Text style={[styles.sectionActionText, { color: colors.primary }]}>自建</Text>
               </Pressable>
             </View>
             <TopicGrid topics={BUILT_IN_TOPICS} subscribedTopicNames={subscribedTopicNames} onTopicPress={handleTopicPress} />
 
-            {/* Actions */}
-            <View style={styles.actionRow}>
-              <ActionChip icon="rss" label="添加源" colors={colors} onPress={() => setAddFeedVisible(true)} />
-              <ActionChip icon="import" label="导入" colors={colors} onPress={handleImportOpml} />
-              <ActionChip icon="export" label="导出" colors={colors} onPress={handleExportOpml} />
-            </View>
+            {/* Section: Tools */}
+            <Text style={[styles.sectionTitle, { color: colors.onSurface, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 12 }]}>工具</Text>
+            <ToolItem icon="rss" label="手动添加 RSS 源" desc="粘贴任意 RSS/Atom 地址" colors={colors} onPress={() => setAddFeedVisible(true)} />
+            <ToolItem icon="import" label="导入 OPML" desc="从其他阅读器迁移订阅" colors={colors} onPress={handleImportOpml} />
+            <ToolItem icon="export-variant" label="导出 OPML" desc="备份当前所有订阅源" colors={colors} onPress={handleExportOpml} />
           </>
         )}
       </ScrollView>
@@ -181,28 +173,38 @@ export default function DiscoverScreen() {
   );
 }
 
-function ActionChip({ icon, label, colors, onPress }: { icon: string; label: string; colors: any; onPress: () => void }) {
+function ToolItem({ icon, label, desc, colors, onPress }: { icon: string; label: string; desc: string; colors: any; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, { backgroundColor: colors.cardBackground, borderColor: colors.outline + '25' }]}>
-      <MaterialCommunityIcons name={icon as any} size={16} color={colors.primary} />
-      <Text style={[styles.chipText, { color: colors.onSurface }]}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.toolItem, { backgroundColor: pressed ? colors.surfaceVariant : 'transparent', borderBottomColor: colors.outline + '12' }]}
+    >
+      <View style={[styles.toolIcon, { backgroundColor: colors.primary + '10' }]}>
+        <MaterialCommunityIcons name={icon as any} size={20} color={colors.primary} />
+      </View>
+      <View style={styles.toolInfo}>
+        <Text style={[styles.toolLabel, { color: colors.onSurface }]}>{label}</Text>
+        <Text style={[styles.toolDesc, { color: colors.onSurfaceVariant }]}>{desc}</Text>
+      </View>
+      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.onSurfaceVariant + '60'} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  searchBar: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  searchInput: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, gap: 8 },
-  searchText: { flex: 1, fontSize: 15, padding: 0 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginVertical: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, gap: 8 },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
   scrollContent: { paddingBottom: 40 },
-  quickBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginHorizontal: 16, marginTop: 14, marginBottom: 6, paddingVertical: 12, borderRadius: 12 },
-  quickBtnText: { fontSize: 14, fontWeight: '600' },
-  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  newBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1 },
-  newBtnText: { fontSize: 12, fontWeight: '500' },
-  actionRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 20 },
-  chip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
-  chipText: { fontSize: 13, fontWeight: '500' },
+  quickBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 16, marginBottom: 8, paddingVertical: 14, borderRadius: 14 },
+  quickBtnText: { fontSize: 15, fontWeight: '600' },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+  sectionTitle: { fontSize: 17, fontWeight: '700' },
+  sectionAction: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sectionActionText: { fontSize: 13, fontWeight: '500' },
+  toolItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, gap: 14 },
+  toolIcon: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  toolInfo: { flex: 1 },
+  toolLabel: { fontSize: 15, fontWeight: '500' },
+  toolDesc: { fontSize: 12, marginTop: 2 },
 });
