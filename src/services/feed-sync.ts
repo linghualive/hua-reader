@@ -4,6 +4,12 @@ import { getSetting } from '@/db/settings';
 import { parseRssFeed } from './rss-parser';
 import { DEFAULT_RSSHUB_URL } from './built-in-topics';
 
+const PUBLIC_RSSHUB_INSTANCES = [
+  'https://rsshub.rssforever.com',
+  'https://rsshub.liumingye.cn',
+  'https://rsshub.ktachibana.party',
+];
+
 export interface SyncResult {
   feedId: number;
   feedTitle: string;
@@ -11,30 +17,63 @@ export interface SyncResult {
   error?: string;
 }
 
-async function getRssHubBaseUrl(): Promise<string> {
-  const custom = await getSetting('rsshub_url');
-  return custom || DEFAULT_RSSHUB_URL;
+let instanceIndex = 0;
+
+function getNextInstance(instances: string[]): string {
+  const instance = instances[instanceIndex % instances.length];
+  instanceIndex++;
+  return instance;
 }
 
-function buildFeedUrl(feed: Feed, rsshubBaseUrl: string): string {
+async function getInstances(): Promise<string[]> {
+  const custom = await getSetting('rsshub_url');
+  const primary = custom || DEFAULT_RSSHUB_URL;
+  return [primary, ...PUBLIC_RSSHUB_INSTANCES];
+}
+
+function buildFeedUrl(feed: Feed, baseUrl: string): string {
   if (feed.source_type === 'rsshub') {
-    // RSSHub route: prepend the base URL
-    return `${rsshubBaseUrl}${feed.url}`;
+    return `${baseUrl}${feed.url}`;
   }
-  // Native RSS/Atom feed URL: use directly
   return feed.url;
 }
 
-export async function syncFeed(feed: Feed): Promise<SyncResult> {
-  const rsshubBaseUrl = await getRssHubBaseUrl();
-  const url = buildFeedUrl(feed, rsshubBaseUrl);
-
+async function fetchWithTimeout(url: string, timeoutMs: number = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const response = await fetch(url, { signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWithFailover(feed: Feed, instances: string[]): Promise<string> {
+  if (feed.source_type !== 'rsshub') {
+    const response = await fetchWithTimeout(feed.url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.text();
+  }
+
+  const errors: string[] = [];
+  for (let attempt = 0; attempt < instances.length; attempt++) {
+    const instance = getNextInstance(instances);
+    const url = buildFeedUrl(feed, instance);
+    try {
+      const response = await fetchWithTimeout(url);
+      if (response.ok) return response.text();
+      errors.push(`${instance}: HTTP ${response.status}`);
+    } catch (err: any) {
+      errors.push(`${instance}: ${err.name === 'AbortError' ? 'timeout' : err.message}`);
     }
-    const xml = await response.text();
+  }
+  throw new Error(errors.join('; '));
+}
+
+export async function syncFeed(feed: Feed, instances: string[]): Promise<SyncResult> {
+  try {
+    const xml = await fetchWithFailover(feed, instances);
     const parsed = parseRssFeed(xml);
 
     let newArticles = 0;
@@ -55,30 +94,26 @@ export async function syncFeed(feed: Feed): Promise<SyncResult> {
     }
 
     await updateFeedLastFetched(feed.id);
-
-    return {
-      feedId: feed.id,
-      feedTitle: feed.title,
-      newArticles,
-    };
+    return { feedId: feed.id, feedTitle: feed.title, newArticles };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return {
-      feedId: feed.id,
-      feedTitle: feed.title,
-      newArticles: 0,
-      error: message,
-    };
+    return { feedId: feed.id, feedTitle: feed.title, newArticles: 0, error: message };
   }
 }
 
 export async function syncAllFeeds(): Promise<SyncResult[]> {
   const feeds = await getAllFeeds();
+  const instances = await getInstances();
   const results: SyncResult[] = [];
 
-  for (const feed of feeds) {
-    const result = await syncFeed(feed);
-    results.push(result);
+  // Sync 3 feeds concurrently to speed up, but not overwhelm servers
+  const batchSize = 3;
+  for (let i = 0; i < feeds.length; i += batchSize) {
+    const batch = feeds.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((feed) => syncFeed(feed, instances))
+    );
+    results.push(...batchResults);
   }
 
   return results;
