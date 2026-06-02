@@ -1114,7 +1114,7 @@ export const BUILT_IN_TOPICS: BuiltInTopic[] = [
   },
 ];
 
-export const DEFAULT_RSSHUB_URL = 'http://8.138.13.111:1200';
+export const DEFAULT_RSSHUB_URL = 'http://linghua.icu:1200';
 ```
 
 - [ ] **Step 2: Implement feed sync service**
@@ -3369,7 +3369,7 @@ export default function SettingsScreen() {
   const [rsshubUrl, setRsshubUrl] = useState('');
 
   useEffect(() => {
-    getSetting('rsshub_url').then((v) => setRsshubUrl(v ?? 'http://8.138.13.111:1200'));
+    getSetting('rsshub_url').then((v) => setRsshubUrl(v ?? 'http://linghua.icu:1200'));
   }, []);
 
   const saveRsshubUrl = () => {
@@ -3702,6 +3702,282 @@ git commit -m "feat: first-run experience and auto article cleanup"
 
 ---
 
+## Task 18: App Auto-Update from GitHub Releases
+
+**Files:**
+- Create: `src/services/updater.ts`
+- Create: `src/components/UpdateDialog.tsx`
+- Modify: `src/app/Providers.tsx`
+
+- [ ] **Step 1: Create updater service**
+
+Create `src/services/updater.ts`:
+
+```ts
+import * as FileSystem from 'expo-file-system';
+import { startActivityAsync } from 'expo-intent-launcher';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+
+const GITHUB_REPO = 'linghualive/hua-reader';
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+
+export interface ReleaseInfo {
+  version: string;
+  downloadUrl: string;
+  releaseNotes: string;
+  publishedAt: string;
+}
+
+export function getCurrentVersion(): string {
+  return Constants.expoConfig?.version ?? '0.0.0';
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+export async function checkForUpdate(): Promise<ReleaseInfo | null> {
+  if (Platform.OS !== 'android') return null;
+
+  try {
+    const response = await fetch(RELEASES_API, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' },
+    });
+    if (!response.ok) return null;
+
+    const release = await response.json();
+    const tagVersion = (release.tag_name ?? '').replace(/^v/, '');
+    const currentVersion = getCurrentVersion();
+
+    if (compareVersions(tagVersion, currentVersion) <= 0) return null;
+
+    const apkAsset = release.assets?.find(
+      (a: any) => a.name?.endsWith('.apk')
+    );
+    if (!apkAsset) return null;
+
+    return {
+      version: tagVersion,
+      downloadUrl: apkAsset.browser_download_url,
+      releaseNotes: release.body ?? '',
+      publishedAt: release.published_at ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function downloadAndInstallApk(url: string): Promise<void> {
+  const fileUri = FileSystem.cacheDirectory + 'hua-reader-update.apk';
+
+  const download = await FileSystem.downloadAsync(url, fileUri);
+
+  await startActivityAsync('android.intent.action.VIEW', {
+    data: download.uri,
+    type: 'application/vnd.android.package-archive',
+    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+  });
+}
+```
+
+- [ ] **Step 2: Create UpdateDialog component**
+
+Create `src/components/UpdateDialog.tsx`:
+
+```tsx
+import React, { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, Modal, ActivityIndicator } from 'react-native';
+import { useTheme } from '@/theme/ThemeContext';
+import type { ReleaseInfo } from '@/services/updater';
+import { downloadAndInstallApk } from '@/services/updater';
+
+interface Props {
+  release: ReleaseInfo;
+  onDismiss: () => void;
+}
+
+export default function UpdateDialog({ release, onDismiss }: Props) {
+  const { colors } = useTheme();
+  const [downloading, setDownloading] = useState(false);
+
+  const handleUpdate = async () => {
+    setDownloading(true);
+    try {
+      await downloadAndInstallApk(release.downloadUrl);
+    } catch {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={styles.overlay}>
+        <View style={[styles.dialog, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.title, { color: colors.onSurface }]}>发现新版本 v{release.version}</Text>
+          {release.releaseNotes ? (
+            <Text style={[styles.notes, { color: colors.onSurfaceVariant }]} numberOfLines={6}>
+              {release.releaseNotes}
+            </Text>
+          ) : null}
+          <View style={styles.buttons}>
+            <Pressable onPress={onDismiss} style={[styles.btn, { borderColor: colors.outline }]}>
+              <Text style={{ color: colors.onSurface }}>稍后</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleUpdate}
+              disabled={downloading}
+              style={[styles.btn, styles.primaryBtn, { backgroundColor: colors.primary }]}
+            >
+              {downloading ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <Text style={{ color: colors.onPrimary, fontWeight: '600' }}>立即更新</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
+  dialog: { width: '82%', borderRadius: 16, padding: 24 },
+  title: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  notes: { fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  buttons: { flexDirection: 'row', gap: 12 },
+  btn: { flex: 1, paddingVertical: 12, borderRadius: 24, alignItems: 'center', borderWidth: 1 },
+  primaryBtn: { borderWidth: 0 },
+});
+```
+
+- [ ] **Step 3: Integrate update check into Providers.tsx**
+
+In `src/app/Providers.tsx`, after DB init and cleanup, check for updates:
+
+```tsx
+import { checkForUpdate, type ReleaseInfo } from '@/services/updater';
+import UpdateDialog from '@/components/UpdateDialog';
+
+// Add state:
+const [updateInfo, setUpdateInfo] = useState<ReleaseInfo | null>(null);
+
+// In useEffect, after cleanup:
+const release = await checkForUpdate();
+if (release) setUpdateInfo(release);
+
+// In render, after children:
+{updateInfo && <UpdateDialog release={updateInfo} onDismiss={() => setUpdateInfo(null)} />}
+```
+
+- [ ] **Step 4: Install expo-intent-launcher**
+
+```bash
+npx expo install expo-intent-launcher
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/services/updater.ts src/components/UpdateDialog.tsx src/app/Providers.tsx
+git commit -m "feat: auto-update from GitHub Releases with download and install"
+```
+
+---
+
+## Task 19: GitHub Actions CI — Build APK and Create Release
+
+**Files:**
+- Create: `.github/workflows/build-release.yml`
+
+- [ ] **Step 1: Create GitHub Actions workflow**
+
+Create `.github/workflows/build-release.yml`:
+
+```yaml
+name: Build and Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK
+        run: |
+          npx expo prebuild --platform android --clean
+          cd android
+          ./gradlew assembleRelease
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ steps.version.outputs.version }}"
+          body: "Hua Reader v${{ steps.version.outputs.version }}"
+          files: android/app/build/outputs/apk/release/*.apk
+```
+
+- [ ] **Step 2: Commit the workflow**
+
+```bash
+git add .github/
+git commit -m "ci: GitHub Actions workflow to build APK and publish to Releases"
+```
+
+- [ ] **Step 3: Document the release process**
+
+To release a new version:
+1. Update `version` in `app.json` (e.g., `"1.0.1"`)
+2. Commit the change
+3. Tag and push:
+```bash
+git tag v1.0.1
+git push origin main --tags
+```
+4. GitHub Actions will automatically build the APK and create a Release
+5. Users running the app will see the update dialog on next launch
+
+---
+
 ## Dependency Summary
 
 ```
@@ -3722,4 +3998,6 @@ Task 1  (scaffold)
               └→ Task 15 (discover screen)
               └→ Task 16 (profile + settings)
                   └→ Task 17 (first-run + integration)
+                      └→ Task 18 (auto-update from GitHub Releases)
+                          └→ Task 19 (GitHub Actions CI)
 ```

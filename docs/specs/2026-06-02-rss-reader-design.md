@@ -8,7 +8,7 @@
 
 **技术栈**：React Native + React Native Paper (Material Design 3) + React Navigation + SQLite
 
-**后端依赖**：自建 RSSHub 实例 (`http://8.138.13.111:1200`)，同时支持任意标准 RSS/Atom 源
+**后端依赖**：自建 RSSHub 实例 (`http://linghua.icu:1200`)，同时支持任意标准 RSS/Atom 源
 
 **目标平台**：Android
 
@@ -351,7 +351,7 @@ settings（设置）
 ```
 App 启动 / 手动下拉刷新 / 定时后台刷新
   → 遍历所有订阅源
-  → RSSHub 源：请求 http://8.138.13.111:1200/{route}
+  → RSSHub 源：请求 http://linghua.icu:1200/{route}
   → 原生 RSS 源：直接请求 RSS URL
   → 解析 XML（RSS 2.0 / Atom）
   → 按 guid 去重，新文章插入 articles 表
