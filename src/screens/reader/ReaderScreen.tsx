@@ -256,6 +256,36 @@ export default function ReaderScreen() {
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDark ? 'light-content' : 'dark-content'} />
 
+      {/* Top bar - fixed at top */}
+      <View style={[styles.topBar, { backgroundColor: (isDark ? '#121212' : colors.surface) }]}>
+        <View style={{ height: statusBarHeight }} />
+        <View style={styles.topBarRow}>
+          <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={isDark ? '#e0e0e0' : colors.onSurface} />
+          </Pressable>
+          <Text style={[styles.titleText, { color: isDark ? '#e0e0e0' : colors.onSurface }]} numberOfLines={1}>
+            {article?.feed_title || ''}
+          </Text>
+          {mode === 'reader' && (
+            <Pressable onPress={handleTranslate} disabled={translating} hitSlop={12} style={styles.barBtn}>
+              {translating ? (
+                <ActivityIndicator size={18} color={colors.primary} />
+              ) : (
+                <MaterialCommunityIcons name="translate" size={22} color={isTranslated ? colors.primary : (isDark ? '#aaa' : colors.onSurfaceVariant)} />
+              )}
+            </Pressable>
+          )}
+          {canToggle && (
+            <Pressable onPress={toggleMode} hitSlop={12} style={styles.barBtn}>
+              <MaterialCommunityIcons name={mode === 'reader' ? 'web' : 'text-box-outline'} size={22} color={isDark ? '#aaa' : colors.onSurfaceVariant} />
+            </Pressable>
+          )}
+          <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
+            <MaterialCommunityIcons name={isBookmarked ? 'star' : 'star-outline'} size={24} color={isBookmarked ? colors.primary : (isDark ? '#e0e0e0' : colors.onSurface)} />
+          </Pressable>
+        </View>
+      </View>
+
       {/* Hidden WebView for on-demand content extraction */}
       {mode === 'loading' && article?.url && (
         <WebView
@@ -273,7 +303,7 @@ export default function ReaderScreen() {
       )}
 
       {/* Loading skeleton */}
-      {mode === 'loading' && <View style={{ marginTop: statusBarHeight + 44 }}><ReaderSkeleton /></View>}
+      {mode === 'loading' && <ReaderSkeleton />}
 
       {/* Reader mode: clean themed content */}
       {mode === 'reader' && readerHtml ? (
@@ -291,7 +321,7 @@ export default function ReaderScreen() {
       {mode === 'web' && article?.url && !webError ? (
         <WebView
           source={{ uri: article.url }}
-          style={[styles.webView, { marginTop: statusBarHeight + 44 }]}
+          style={[styles.webView, ]}
           showsVerticalScrollIndicator={false}
           javaScriptEnabled
           domStorageEnabled
@@ -308,7 +338,7 @@ export default function ReaderScreen() {
       ) : null}
 
       {mode === 'web' && webError && article?.url ? (
-        <View style={[styles.errorContainer, { marginTop: statusBarHeight + 44 }]}>
+        <View style={[styles.errorContainer, ]}>
           <MaterialCommunityIcons name="web-off" size={48} color={colors.onSurfaceVariant} />
           <Text style={[styles.errorText, { color: colors.onSurfaceVariant }]}>页面加载失败</Text>
           <Pressable onPress={() => setWebError(false)} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
@@ -320,49 +350,6 @@ export default function ReaderScreen() {
         </View>
       ) : null}
 
-      {/* Top bar */}
-      {barsVisible && (
-        <View style={[styles.topBar, { backgroundColor: (isDark ? '#121212' : colors.surface) + 'F0' }]}>
-          <View style={{ height: statusBarHeight }} />
-          <View style={styles.topBarRow}>
-            <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.barBtn}>
-              <MaterialCommunityIcons name="arrow-left" size={24} color={isDark ? '#e0e0e0' : colors.onSurface} />
-            </Pressable>
-            <Text style={[styles.titleText, { color: isDark ? '#e0e0e0' : colors.onSurface }]} numberOfLines={1}>
-              {article?.feed_title || ''}
-            </Text>
-            {mode === 'reader' && (
-              <Pressable onPress={handleTranslate} disabled={translating} hitSlop={12} style={styles.barBtn}>
-                {translating ? (
-                  <ActivityIndicator size={18} color={colors.primary} />
-                ) : (
-                  <MaterialCommunityIcons
-                    name="translate"
-                    size={22}
-                    color={isTranslated ? colors.primary : (isDark ? '#aaa' : colors.onSurfaceVariant)}
-                  />
-                )}
-              </Pressable>
-            )}
-            {canToggle && (
-              <Pressable onPress={toggleMode} hitSlop={12} style={styles.barBtn}>
-                <MaterialCommunityIcons
-                  name={mode === 'reader' ? 'web' : 'text-box-outline'}
-                  size={22}
-                  color={isDark ? '#aaa' : colors.onSurfaceVariant}
-                />
-              </Pressable>
-            )}
-            <Pressable onPress={handleBookmark} hitSlop={12} style={styles.barBtn}>
-              <MaterialCommunityIcons
-                name={isBookmarked ? 'star' : 'star-outline'}
-                size={24}
-                color={isBookmarked ? colors.primary : (isDark ? '#e0e0e0' : colors.onSurface)}
-              />
-            </Pressable>
-          </View>
-        </View>
-      )}
 
       {webLoading && mode === 'web' && (
         <View style={[styles.webLoadingBar, { top: statusBarHeight + 44 }]}>
@@ -376,7 +363,7 @@ export default function ReaderScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   webView: { flex: 1, backgroundColor: 'transparent' },
-  topBar: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  topBar: {},
   topBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingBottom: 8 },
   barBtn: { padding: 8 },
   titleText: { flex: 1, fontSize: 15, fontWeight: '500', marginHorizontal: 4 },
