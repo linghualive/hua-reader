@@ -81,7 +81,25 @@ export function TopicDetail({ visible, onClose, topic, onChanged }: TopicDetailP
     setLoading(false);
   };
 
+  const unsubscribeAll = async () => {
+    if (!topic) return;
+    setLoading(true);
+    try {
+      const feeds = await getAllFeeds();
+      for (const feed of topic.feeds) {
+        const match = feeds.find((f) => f.url === feed.route);
+        if (match) await deleteFeed(match.id);
+      }
+      await loadSubscribed();
+      onChanged();
+    } catch {}
+    setLoading(false);
+  };
+
   if (!topic) return null;
+
+  const allSubscribed = topic.feeds.every((f) => subscribedUrls.has(f.route));
+  const noneSubscribed = topic.feeds.every((f) => !subscribedUrls.has(f.route));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -93,15 +111,26 @@ export function TopicDetail({ visible, onClose, topic, onChanged }: TopicDetailP
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.onSurface }]}>{topic.name}</Text>
-            <Pressable
-              onPress={subscribeAll}
-              disabled={loading}
-              style={[styles.subscribeAllBtn, { backgroundColor: colors.primary }]}
-            >
-              <Text style={[styles.subscribeAllText, { color: colors.onPrimary }]}>
-                全部订阅
-              </Text>
-            </Pressable>
+            <View style={styles.headerActions}>
+              {!noneSubscribed && (
+                <Pressable
+                  onPress={unsubscribeAll}
+                  disabled={loading}
+                  style={[styles.actionBtn, { backgroundColor: colors.surfaceVariant }]}
+                >
+                  <Text style={[styles.actionBtnText, { color: colors.error }]}>全部取消</Text>
+                </Pressable>
+              )}
+              {!allSubscribed && (
+                <Pressable
+                  onPress={subscribeAll}
+                  disabled={loading}
+                  style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>全部订阅</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
 
           <ScrollView style={styles.list}>
@@ -161,12 +190,16 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  subscribeAllBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  subscribeAllText: {
+  actionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 14,
+  },
+  actionBtnText: {
     fontSize: 13,
     fontWeight: '600',
   },
