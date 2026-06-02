@@ -1,0 +1,45 @@
+{
+  "name": "hua-reader",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@react-native-community/slider": "^5.2.0",
+    "@react-navigation/bottom-tabs": "^7.16.2",
+    "@react-navigation/native": "^7.2.5",
+    "@react-navigation/native-stack": "^7.16.0",
+    "@shopify/flash-list": "2.0.2",
+    "expo": "~56.0.8",
+    "expo-constants": "~56.0.16",
+    "expo-document-picker": "~56.0.4",
+    "expo-file-system": "~56.0.7",
+    "expo-haptics": "~56.0.3",
+    "expo-intent-launcher": "~56.0.4",
+    "expo-sharing": "~56.0.15",
+    "expo-sqlite": "~56.0.4",
+    "expo-status-bar": "~56.0.4",
+    "fast-xml-parser": "^5.8.0",
+    "linkedom": "^0.18.12",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-gesture-handler": "~2.31.1",
+    "react-native-pager-view": "8.0.1",
+    "react-native-paper": "^5.15.3",
+    "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2",
+    "react-native-vector-icons": "^10.3.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}
