@@ -92,7 +92,11 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       tabBar={(props) => <FloatingTabBar {...props} />}
-      screenOptions={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { position: 'absolute', height: 0, overflow: 'hidden', borderTopWidth: 0, elevation: 0 },
+        tabBarShowLabel: false,
+      }}
       sceneContainerStyle={{ backgroundColor: 'transparent' }}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} />
