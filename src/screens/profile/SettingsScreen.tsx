@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Alert, Linking, StyleSheet } from 'react-native';
+import { getCurrentVersion } from '@/services/updater';
 import { useTheme } from '@/theme/ThemeContext';
 import { SEED_COLORS } from '@/theme/colors';
 import { getSetting, setSetting } from '@/db/settings';
@@ -131,6 +132,20 @@ export default function SettingsScreen() {
           清理 30 天前的旧文章
         </Text>
       </Pressable>
+
+      {/* About */}
+      <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>关于</Text>
+      <Text style={[styles.versionText, { color: colors.onSurfaceVariant }]}>
+        当前版本：v{getCurrentVersion()}
+      </Text>
+      <Pressable
+        onPress={() => Linking.openURL('https://github.com/linghualive/hua-reader/releases/latest')}
+        style={[styles.cleanupButton, { backgroundColor: colors.surfaceVariant, borderColor: colors.outline + '30' }]}
+      >
+        <Text style={[styles.cleanupText, { color: colors.primary }]}>
+          检查最新版本
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -194,6 +209,10 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  versionText: {
+    fontSize: 14,
+    marginBottom: 12,
   },
   cleanupButton: {
     paddingVertical: 14,
