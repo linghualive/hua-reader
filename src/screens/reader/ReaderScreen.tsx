@@ -174,6 +174,8 @@ export default function ReaderScreen() {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'scroll_progress') {
         setProgress(data.progress);
+      } else if (data.type === 'toggle_bars') {
+        setBarsVisible((v) => !v);
       }
     } catch {}
   }, []);
@@ -282,8 +284,7 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* Tap zone to toggle bars */}
-      <Pressable style={styles.tapZone} onPress={() => setBarsVisible((v) => !v)} />
+{/* Removed tap zone overlay - toggle bars via WebView JS tap detection */}
 
       <TypographyPanel
         visible={typographyVisible}
@@ -305,5 +306,4 @@ const styles = StyleSheet.create({
   topBarSpacer: { flex: 1 },
   barBtn: { padding: 8 },
   bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10, paddingBottom: 20 },
-  tapZone: { position: 'absolute', top: '30%', bottom: '30%', left: '20%', right: '20%', zIndex: 5 },
 });

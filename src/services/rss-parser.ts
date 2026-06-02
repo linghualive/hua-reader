@@ -85,7 +85,7 @@ function parseRssItems(items: unknown[]): ParsedItem[] {
     const summary = getText(item['description']) || content;
 
     return {
-      title: getText(item['title']),
+      title: stripHtml(getText(item['title'])),
       summary: truncate(stripHtml(summary), 300),
       content: content || getText(item['description']),
       url: getText(item['link']),
@@ -120,7 +120,7 @@ function parseAtomItems(entries: unknown[]): ParsedItem[] {
     const summary = getText(entry['summary']) || content;
 
     return {
-      title: getText(entry['title']),
+      title: stripHtml(getText(entry['title'])),
       summary: truncate(stripHtml(summary), 300),
       content: content || getText(entry['summary']),
       url,

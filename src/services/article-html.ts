@@ -241,6 +241,23 @@ export function generateArticleHtml(opts: ArticleHtmlOptions): string {
 
       window.addEventListener('scroll', reportProgress, { passive: true });
       reportProgress();
+
+      // Tap center of screen to toggle bars
+      var tapStart = 0;
+      document.addEventListener('touchstart', function(e) { tapStart = Date.now(); }, { passive: true });
+      document.addEventListener('touchend', function(e) {
+        var elapsed = Date.now() - tapStart;
+        if (elapsed < 200 && e.changedTouches.length === 1) {
+          var touch = e.changedTouches[0];
+          var y = touch.clientY / window.innerHeight;
+          var x = touch.clientX / window.innerWidth;
+          if (y > 0.25 && y < 0.75 && x > 0.15 && x < 0.85) {
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'toggle_bars' }));
+            }
+          }
+        }
+      }, { passive: true });
     })();
   </script>
 </body>
