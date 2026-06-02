@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Modal, View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import React from 'react';
+import { Modal, View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useTheme } from '@/theme/ThemeContext';
 import { type ReleaseInfo, downloadAndInstallApk } from '@/services/updater';
 
@@ -10,17 +10,6 @@ interface UpdateDialogProps {
 
 export function UpdateDialog({ releaseInfo, onDismiss }: UpdateDialogProps) {
   const { colors } = useTheme();
-  const [downloading, setDownloading] = useState(false);
-
-  const handleUpdate = async () => {
-    setDownloading(true);
-    try {
-      await downloadAndInstallApk(releaseInfo.downloadUrl);
-    } catch (err) {
-      Alert.alert('更新失败', err instanceof Error ? err.message : '请稍后重试');
-    }
-    setDownloading(false);
-  };
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onDismiss}>
@@ -39,27 +28,14 @@ export function UpdateDialog({ releaseInfo, onDismiss }: UpdateDialogProps) {
           ) : null}
 
           <View style={styles.buttons}>
-            <Pressable
-              onPress={onDismiss}
-              disabled={downloading}
-              style={[styles.button, { backgroundColor: colors.surfaceVariant }]}
-            >
+            <Pressable onPress={onDismiss} style={[styles.button, { backgroundColor: colors.surfaceVariant }]}>
               <Text style={[styles.buttonText, { color: colors.onSurfaceVariant }]}>稍后</Text>
             </Pressable>
-
             <Pressable
-              onPress={handleUpdate}
-              disabled={downloading}
-              style={[styles.button, { backgroundColor: colors.primary, opacity: downloading ? 0.7 : 1 }]}
+              onPress={() => { downloadAndInstallApk(releaseInfo.downloadUrl); onDismiss(); }}
+              style={[styles.button, { backgroundColor: colors.primary }]}
             >
-              {downloading ? (
-                <View style={styles.downloadingRow}>
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                  <Text style={[styles.buttonText, { color: colors.onPrimary, marginLeft: 6 }]}>下载中...</Text>
-                </View>
-              ) : (
-                <Text style={[styles.buttonText, { color: colors.onPrimary }]}>立即更新</Text>
-              )}
+              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>立即更新</Text>
             </Pressable>
           </View>
         </View>
@@ -75,7 +51,6 @@ const styles = StyleSheet.create({
   notesContainer: { maxHeight: 180, marginBottom: 20 },
   notes: { fontSize: 14, lineHeight: 22 },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
-  button: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, minWidth: 80, alignItems: 'center', justifyContent: 'center' },
+  button: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, minWidth: 80, alignItems: 'center' },
   buttonText: { fontSize: 15, fontWeight: '600' },
-  downloadingRow: { flexDirection: 'row', alignItems: 'center' },
 });
