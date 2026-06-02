@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, RefreshControl, StyleSheet, Dimensions } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
@@ -75,11 +75,19 @@ export function ListMode() {
     setSelectedIndex(index);
   }, []);
 
+  const tabLayouts = useRef<Map<number, { x: number; width: number }>>(new Map());
+
+  const scrollTabIntoView = useCallback((index: number) => {
+    const layout = tabLayouts.current.get(index);
+    if (!layout || !tabScrollRef.current) return;
+    const screenWidth = Dimensions.get('window').width;
+    const scrollX = Math.max(0, layout.x - (screenWidth / 2) + (layout.width / 2));
+    tabScrollRef.current.scrollTo({ x: scrollX, animated: true });
+  }, []);
+
   useEffect(() => {
-    if (tabScrollRef.current && selectedIndex > 0) {
-      tabScrollRef.current.scrollTo({ x: Math.max(0, selectedIndex * 70 - 40), animated: true });
-    }
-  }, [selectedIndex]);
+    scrollTabIntoView(selectedIndex);
+  }, [selectedIndex, scrollTabIntoView]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -96,6 +104,10 @@ export function ListMode() {
             <Pressable
               key={tab.name}
               onPress={() => onTabPress(index)}
+              onLayout={(e) => {
+                const { x, width } = e.nativeEvent.layout;
+                tabLayouts.current.set(index, { x, width });
+              }}
               style={[
                 styles.tab,
                 active
