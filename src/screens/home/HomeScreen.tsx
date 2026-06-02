@@ -1,18 +1,17 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Pressable, RefreshControl, Animated, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Swipeable } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '@/theme/ThemeContext';
 import { getAllFeeds } from '@/db/feeds';
-import { getUnreadArticles, markAsRead, toggleBookmark, type ArticleWithFeed } from '@/db/articles';
+import { getUnreadArticles, markAsRead, type ArticleWithFeed } from '@/db/articles';
 import { getAllTopics } from '@/db/topics';
 import { syncFeedsByTopic } from '@/services/feed-sync';
 import { EmptyState } from '@/components/EmptyState';
+import { ArticleListSkeleton } from '@/components/Skeleton';
 import { relativeTime } from '@/utils/time';
 import { useTopicFilter, type RootStackParamList } from '@/app/Navigation';
 
@@ -28,6 +27,7 @@ export default function HomeScreen() {
   const [articles, setArticles] = useState<ArticleWithFeed[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
 
@@ -46,10 +46,10 @@ export default function HomeScreen() {
   const loadArticles = useCallback(async () => {
     const data = await getUnreadArticles(topicFilter.id ?? undefined);
     setArticles(data);
+    setLoading(false);
   }, [topicFilter.id]);
 
-  // Reload when topic filter changes
-  useEffect(() => { loadArticles(); }, [topicFilter.id]);
+  useEffect(() => { setLoading(true); loadArticles(); }, [topicFilter.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +57,7 @@ export default function HomeScreen() {
       (async () => {
         const feeds = await getAllFeeds();
         setHasFeeds(feeds.length > 0);
-        if (feeds.length === 0) return;
+        if (feeds.length === 0) { setLoading(false); return; }
 
         const topicList = await getAllTopics();
         await loadArticles();
@@ -90,7 +90,7 @@ export default function HomeScreen() {
 
   const handleArticlePress = useCallback(async (article: ArticleWithFeed) => {
     await markAsRead(article.id);
-    setArticles(prev => prev.map(a => a.id === article.id ? { ...a, is_read: 1 } : a));
+    setArticles(prev => prev.filter(a => a.id !== article.id));
     stackNav.navigate('Reader', { articleId: article.id });
   }, [stackNav]);
 
@@ -115,98 +115,50 @@ export default function HomeScreen() {
         <Pressable onPress={() => drawNav.openDrawer()} hitSlop={12} style={styles.menuBtn}>
           <MaterialCommunityIcons name="menu" size={24} color={colors.onSurface} />
         </Pressable>
-        <Text style={[styles.appTitle, { color: colors.onSurface }]}>
-          {topicFilter.name}
-        </Text>
+        <Text style={[styles.appTitle, { color: colors.onSurface }]}>{topicFilter.name}</Text>
         {syncing && <Animated.View style={[styles.syncDot, { backgroundColor: colors.primary, opacity: pulseAnim }]} />}
         <View style={{ flex: 1 }} />
       </View>
 
-      <FlashList
-        data={articles}
-        keyExtractor={item => String(item.id)}
-        renderItem={({ item }) => (
-          <ArticleItem
-            article={item}
-            colors={colors}
-            onPress={() => handleArticlePress(item)}
-            onMarkRead={async () => {
-              await markAsRead(item.id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              setArticles(prev => prev.filter(a => a.id !== item.id));
-            }}
-            onBookmark={async () => {
-              await toggleBookmark(item.id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              setArticles(prev => prev.map(a => a.id === item.id ? { ...a, is_bookmarked: a.is_bookmarked === 1 ? 0 : 1 } : a));
-            }}
-          />
-        )}
-        estimatedItemSize={100}
-        contentContainerStyle={{ paddingBottom: 30 }}
-        ListEmptyComponent={<EmptyState icon="newspaper-variant-outline" message={syncing ? '正在同步...' : '暂无文章，下拉刷新'} />}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-      />
+      {loading ? (
+        <ArticleListSkeleton />
+      ) : (
+        <FlashList
+          data={articles}
+          keyExtractor={item => String(item.id)}
+          renderItem={({ item }) => <ArticleItem article={item} colors={colors} onPress={() => handleArticlePress(item)} />}
+          estimatedItemSize={100}
+          contentContainerStyle={{ paddingBottom: 30 }}
+          ListEmptyComponent={<EmptyState icon="newspaper-variant-outline" message={syncing ? '正在同步...' : '暂无文章，下拉刷新'} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-function ArticleItem({ article, colors, onPress, onMarkRead, onBookmark }: {
-  article: ArticleWithFeed; colors: any; onPress: () => void;
-  onMarkRead: () => void; onBookmark: () => void;
-}) {
+function ArticleItem({ article, colors, onPress }: { article: ArticleWithFeed; colors: any; onPress: () => void }) {
   const isRead = article.is_read === 1;
-  const isBookmarked = article.is_bookmarked === 1;
   const time = relativeTime(new Date(article.published_at));
   const summary = (article.summary || '').replace(/<[^>]*>/g, '').trim();
-  const swipeRef = useRef<Swipeable>(null);
-
-  const renderLeftActions = () => (
-    <Pressable
-      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onMarkRead(); swipeRef.current?.close(); }}
-      style={[styles.swipeAction, { backgroundColor: '#4CAF50' }]}
-    >
-      <MaterialCommunityIcons name="check" size={22} color="#fff" />
-      <Text style={styles.swipeActionText}>已读</Text>
-    </Pressable>
-  );
-
-  const renderRightActions = () => (
-    <Pressable
-      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onBookmark(); swipeRef.current?.close(); }}
-      style={[styles.swipeAction, { backgroundColor: isBookmarked ? '#FF9800' : '#2196F3' }]}
-    >
-      <MaterialCommunityIcons name={isBookmarked ? 'star-off' : 'star'} size={22} color="#fff" />
-      <Text style={styles.swipeActionText}>{isBookmarked ? '取消' : '收藏'}</Text>
-    </Pressable>
-  );
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      renderLeftActions={renderLeftActions}
-      renderRightActions={renderRightActions}
-      overshootLeft={false}
-      overshootRight={false}
-      friction={2}
-    >
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: pressed ? colors.surfaceVariant : colors.cardBackground }]}>
-        <View style={styles.cardInner}>
-          <View style={styles.cardSourceRow}>
-            <View style={[styles.sourceDot, { backgroundColor: colors.primary + (isRead ? '30' : '80') }]} />
-            <Text style={[styles.sourceName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>{article.feed_title}</Text>
-            <Text style={[styles.timeText, { color: colors.onSurfaceVariant + '99' }]}>{time}</Text>
-          </View>
-          <Text style={[styles.cardTitle, { color: isRead ? colors.onSurfaceVariant : colors.onSurface }]} numberOfLines={2}>
-            {article.title}
-          </Text>
-          {summary ? (
-            <Text style={[styles.cardSummary, { color: colors.onSurfaceVariant + 'BB' }]} numberOfLines={2}>{summary}</Text>
-          ) : null}
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: pressed ? colors.surfaceVariant : 'transparent' }]}>
+      <View style={styles.cardInner}>
+        <View style={styles.cardSourceRow}>
+          <View style={[styles.sourceDot, { backgroundColor: colors.primary + (isRead ? '30' : '80') }]} />
+          <Text style={[styles.sourceName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>{article.feed_title}</Text>
+          <Text style={[styles.timeText, { color: colors.onSurfaceVariant + '99' }]}>{time}</Text>
         </View>
-        <View style={[styles.cardDivider, { backgroundColor: colors.outline + '15' }]} />
-      </Pressable>
-    </Swipeable>
+        <Text style={[styles.cardTitle, { color: isRead ? colors.onSurfaceVariant : colors.onSurface }]} numberOfLines={2}>
+          {article.title}
+        </Text>
+        {summary ? (
+          <Text style={[styles.cardSummary, { color: colors.onSurfaceVariant + 'BB' }]} numberOfLines={2}>{summary}</Text>
+        ) : null}
+      </View>
+      <View style={[styles.cardDivider, { backgroundColor: colors.outline + '15' }]} />
+    </Pressable>
   );
 }
 
@@ -225,6 +177,4 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, lineHeight: 24, fontWeight: '600', marginBottom: 4 },
   cardSummary: { fontSize: 13, lineHeight: 20 },
   cardDivider: { height: StyleSheet.hairlineWidth },
-  swipeAction: { justifyContent: 'center', alignItems: 'center', width: 72, gap: 4 },
-  swipeActionText: { color: '#fff', fontSize: 11, fontWeight: '500' },
 });

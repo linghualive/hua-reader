@@ -41,7 +41,9 @@ function CustomDrawerContent({ navigation }: DrawerContentComponentProps) {
   const { current, setCurrent } = useTopicFilter();
   const [topics, setTopics] = useState<Topic[]>([]);
 
-  useEffect(() => { getAllTopics().then(setTopics); }, []);
+  // Refresh topics every time drawer opens
+  const drawerState = state;
+  useEffect(() => { getAllTopics().then(setTopics); }, [drawerState]);
 
   const goHome = useCallback((filter: TopicFilter) => {
     setCurrent(filter);
@@ -125,7 +127,7 @@ function MainStack() {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'slide_from_right' }} />
+      <Stack.Screen name="Reader" component={wrap(LazyReader)} options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="Discover" component={wrap(LazyDiscover)} options={{ headerShown: true, title: '发现' }} />
       <Stack.Screen name="Profile" component={wrap(LazyProfile)} options={{ headerShown: true, title: '我的' }} />
       <Stack.Screen name="Bookmarks" component={wrap(LazyBookmarks)} options={{ headerShown: true, title: '我的收藏' }} />
@@ -151,7 +153,7 @@ export function Navigation() {
             drawerStyle: { width: 270, backgroundColor: colors.surface },
             overlayColor: 'rgba(0,0,0,0.4)',
             swipeEnabled: true,
-            swipeEdgeWidth: 50,
+            swipeEdgeWidth: 80,
           }}
         >
           <Drawer.Screen name="MainStack" component={MainStack} />
